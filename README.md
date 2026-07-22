@@ -4,11 +4,19 @@ A GitHub Action that **auto-approves Terraform pull requests** when the
 `terraform plan` result matches declarative safety rules — using a **GitHub App
 identity** so the approval counts toward your branch's required reviews.
 
+> [!NOTE]
+> **This project is in alpha.** Inputs, outputs and the config schema may change
+> without notice, and breaking changes can land in minor releases. Pin to a
+> specific tag or commit SHA, and review the release notes before upgrading.
+
 ## Why
 
 You want **Required approvals ≥ 1** on your Terraform repo, but:
 
-- **CodeOwners** only lets you gate by file/directory, not by *what actually changes*.
+- **[CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)**
+  only lets you gate by path — its patterns "follow most of the same rules used
+  in gitignore files" — so it can't distinguish a no-op `plan` from a `destroy`
+  in the same directory.
 - Many PRs are provably safe (a `plan` with **no changes**, or only a narrow set
   of resource updates) and don't need a human to click approve.
 
@@ -16,10 +24,22 @@ You want **Required approvals ≥ 1** on your Terraform repo, but:
 it's safe, approves the PR as a bot — so humans only review the changes that
 matter, without weakening the required-review rule.
 
-> `github-actions[bot]` (the default `GITHUB_TOKEN`) **cannot approve PRs**, and
-> a PR author can't approve their own PR. A GitHub App is a distinct identity
-> whose approval *does* count toward required reviews — that's why this action
-> uses one.
+> [!IMPORTANT]
+> **Why a GitHub App, and not the default `GITHUB_TOKEN`?**
+>
+> - Approving with `GITHUB_TOKEN` is blocked outright unless
+>   [*Allow GitHub Actions to create and approve pull requests*](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)
+>   is enabled at both the org and repo level. It is off by default, and many
+>   orgs deliberately keep it off.
+> - Even with that setting on, an approval by `github-actions[bot]` is not
+>   honoured as an approving review by branch protection / rulesets — by design,
+>   so a workflow cannot approve its own changes. It shows up in the UI but the
+>   required-approvals count does not move.
+> - A PR author also can't approve their own PR.
+>
+> A GitHub App installation token acts as a **distinct identity**, so its
+> approval *does* count toward required reviews. That's why this action expects
+> one.
 
 ## How it works
 
