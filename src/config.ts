@@ -35,6 +35,12 @@ const RuleSchema = z
 
 const ConfigSchema = z
   .object({
+    /**
+     * Files/directories the PR is allowed to touch. If the PR changes anything
+     * outside this list, approval is skipped before the plan is even evaluated.
+     * Omitting it disables the scope gate (every changed file is in scope).
+     */
+    target_paths: z.array(z.string().min(1)).nonempty().optional(),
     rules: z.array(RuleSchema).nonempty(),
   })
   .strict()

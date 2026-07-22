@@ -1,6 +1,17 @@
 # Example config for tf-pr-approver.
 # Place this at .github/tf-pr-approver.yml in your Terraform repository.
 #
+# Evaluation happens in two stages:
+#   1. scope check — the PR must not change anything outside `target_paths`
+#   2. plan rules  — every plan JSON must match at least one rule
+#
+# Stage 1 short-circuits: a PR that also touches application code is never
+# auto-approved, however safe its terraform plan looks.
+target_paths:
+  - terraform/**
+  - docs/**
+  - '**/*.md'
+
 # Rules are OR'd: a plan is considered "safe" if it matches at least ONE rule.
 # Within a rule, all conditions under `when` must hold (AND).
 rules:
