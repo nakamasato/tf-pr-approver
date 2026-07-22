@@ -58,7 +58,9 @@ describe('parseConfig', () => {
 
   it('rejects an empty include or exclude list', () => {
     expect(() => parseConfig(withTargets({ include: [] }))).toThrow(/invalid config/)
-    expect(() => parseConfig(withTargets({ include: ['a'], exclude: [] }))).toThrow(/invalid config/)
+    expect(() => parseConfig(withTargets({ include: ['a'], exclude: [] }))).toThrow(
+      /invalid config/
+    )
   })
 
   it('rejects an unknown key under target_paths', () => {

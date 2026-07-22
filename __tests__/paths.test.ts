@@ -56,10 +56,12 @@ describe('isTargetPath with exclude', () => {
   it('lets exclude win regardless of the order of the two lists', () => {
     // Deny-wins is order-independent: unlike a flat list of `!` patterns, no
     // arrangement of the same patterns can produce a different verdict.
-    expect(isTargetPath('terraform/prod/main.tf', {
-      include: ['terraform/**', 'terraform/prod/main.tf'],
-      exclude: ['terraform/prod/**'],
-    })).toBe(false)
+    expect(
+      isTargetPath('terraform/prod/main.tf', {
+        include: ['terraform/**', 'terraform/prod/main.tf'],
+        exclude: ['terraform/prod/**'],
+      })
+    ).toBe(false)
   })
 
   it('ignores an exclude pattern that nothing in include matches', () => {
