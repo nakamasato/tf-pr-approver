@@ -7,10 +7,21 @@
 #
 # Stage 1 short-circuits: a PR that also touches application code is never
 # auto-approved, however safe its terraform plan looks.
+#
+# `include` lists what the PR may touch; `exclude` carves paths back out and
+# takes precedence. Negated ("!") patterns are rejected — use `exclude`.
+# An `exclude` written without an `include` puts NOTHING in scope, so nothing
+# is ever approved. That is deliberate: an incomplete scope must fail closed.
 target_paths:
-  - terraform/**
-  - docs/**
-  - '**/*.md'
+  include:
+    # Prefer a directory over `**/*.tf`: the latter leaves terraform.tfvars and
+    # .terraform.lock.hcl out of scope, so version bumps stop being approved.
+    - terraform/**
+    - docs/**
+    - '**/*.md'
+  exclude:
+    # Production stays under human review, however safe the plan looks.
+    - terraform/prod/**
 
 # Rules are OR'd: a plan is considered "safe" if it matches at least ONE rule.
 # Within a rule, all conditions under `when` must hold (AND).

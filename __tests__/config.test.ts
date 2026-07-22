@@ -15,12 +15,32 @@ describe('parseConfig', () => {
     expect(cfg.rules).toHaveLength(2)
   })
 
-  it('accepts target_paths', () => {
-    const cfg = parseConfig({
-      target_paths: ['terraform/**', 'docs'],
-      rules: [{ name: 'no-changes', when: { no_changes: true } }],
+  const withTargets = (target_paths: unknown): unknown => ({
+    target_paths,
+    rules: [{ name: 'x', when: { no_changes: true } }],
+  })
+
+  it('accepts target_paths with include and exclude', () => {
+    const cfg = parseConfig(
+      withTargets({ include: ['terraform/**', 'docs'], exclude: ['terraform/prod/**'] })
+    )
+    expect(cfg.target_paths).toEqual({
+      include: ['terraform/**', 'docs'],
+      exclude: ['terraform/prod/**'],
     })
-    expect(cfg.target_paths).toEqual(['terraform/**', 'docs'])
+  })
+
+  it('accepts include on its own', () => {
+    const cfg = parseConfig(withTargets({ include: ['terraform/**'] }))
+    expect(cfg.target_paths).toEqual({ include: ['terraform/**'] })
+  })
+
+  it('accepts exclude on its own (nothing ends up in scope)', () => {
+    // Valid config, useless gate: `paths.ts` puts no file in scope, so the
+    // action can only ever skip. Fail-closed, so it is a warning, not an error.
+    const cfg = parseConfig(withTargets({ exclude: ['app/**'] }))
+    expect(cfg.target_paths).toEqual({ exclude: ['app/**'] })
+    expect(cfg.target_paths?.include).toBeUndefined()
   })
 
   it('leaves target_paths undefined when omitted (scope gate disabled)', () => {
@@ -28,18 +48,34 @@ describe('parseConfig', () => {
     expect(cfg.target_paths).toBeUndefined()
   })
 
-  it('rejects an empty target_paths list', () => {
-    expect(() =>
-      parseConfig({ target_paths: [], rules: [{ name: 'x', when: { no_changes: true } }] })
-    ).toThrow(/invalid config/)
+  it('rejects the old flat-array form', () => {
+    expect(() => parseConfig(withTargets(['terraform/**']))).toThrow(/invalid config/)
   })
 
-  it('rejects a negated target_paths pattern', () => {
+  it('rejects an empty target_paths object', () => {
+    expect(() => parseConfig(withTargets({}))).toThrow(/must specify "include" and\/or "exclude"/)
+  })
+
+  it('rejects an empty include or exclude list', () => {
+    expect(() => parseConfig(withTargets({ include: [] }))).toThrow(/invalid config/)
+    expect(() => parseConfig(withTargets({ include: ['a'], exclude: [] }))).toThrow(/invalid config/)
+  })
+
+  it('rejects an unknown key under target_paths', () => {
+    expect(() => parseConfig(withTargets({ include: ['a'], ignore: ['b'] }))).toThrow(
+      /invalid config/
+    )
+  })
+
+  it('rejects a negated pattern in include', () => {
+    expect(() => parseConfig(withTargets({ include: ['terraform/**', '!docs/**'] }))).toThrow(
+      /negated patterns/
+    )
+  })
+
+  it('rejects a negated pattern in exclude (double negation widens the scope)', () => {
     expect(() =>
-      parseConfig({
-        target_paths: ['terraform/**', '!docs/**'],
-        rules: [{ name: 'x', when: { no_changes: true } }],
-      })
+      parseConfig(withTargets({ include: ['terraform/**'], exclude: ['!docs/**'] }))
     ).toThrow(/negated patterns/)
   })
 

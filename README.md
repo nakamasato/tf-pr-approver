@@ -125,8 +125,11 @@ rule, **all conditions under `when` must hold** (AND).
 
 ```yaml
 target_paths:
-  - terraform/**
-  - docs/**
+  include:
+    - terraform/**
+    - docs/**
+  exclude:
+    - terraform/prod/**
 
 rules:
   - name: no-changes
@@ -141,9 +144,16 @@ rules:
 
 ### `target_paths` (scope check)
 
-A list of files/directories the PR is allowed to touch. Every changed file
-(including the *previous* path of a rename) must be covered by at least one
-entry, otherwise the action skips approval **before** looking at any plan.
+Declares which files the PR is allowed to touch:
+
+| Key       | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `include` | Paths that are in scope.                                            |
+| `exclude` | Paths carved back out of `include`. **Takes precedence over it.**   |
+
+A file is in scope when it matches `include` and does **not** match `exclude`.
+Every changed file (including the *previous* path of a rename) must be in scope,
+otherwise the action skips approval **before** looking at any plan.
 
 | Pattern form   | Matches                                                          |
 | -------------- | ---------------------------------------------------------------- |
@@ -152,15 +162,34 @@ entry, otherwise the action skips approval **before** looking at any plan.
 | `**/*.md`      | any `.md` file at any depth                                      |
 
 Patterns are [minimatch](https://github.com/isaacs/minimatch) globs with
-`dot: true`, so `.github/**` matches dot directories.
+`dot: true`, so `.github/**` matches dot directories. The bare-path form
+(`docs` covering `docs/**`) is a convenience of this action, not standard glob
+behaviour.
 
-`target_paths` is an **allow-list**, so negation is not supported: a pattern
-starting with `!` is rejected by config validation. To narrow the scope, list
-the paths you do allow rather than the ones you want to exclude.
+> [!TIP]
+> Matching on `**/*.tf` alone is usually too narrow: `terraform.tfvars`,
+> `.terraform.lock.hcl` and `*.tf.json` fall out of scope, so provider version
+> bumps stop being auto-approved. Prefer a directory pattern like `terraform/**`.
 
-> `target_paths` is optional. Omitting it disables the scope check — the action
-> logs a warning, and a PR mixing terraform with unrelated changes can be
-> approved. Set it on any monorepo.
+#### Why `exclude` instead of `!` patterns
+
+A pattern starting with `!` is **rejected by config validation** in both lists.
+`exclude` is a separate deny-list rather than a negation mixed into one list,
+which makes the check order-independent and **monotonic**: adding an `exclude`
+entry can only ever narrow the scope. A `!` in a flat list has neither property
+— a single `!app/**` would match nearly every file and silently disable the
+gate, and the gate failing *open* means approving without review.
+
+> [!IMPORTANT]
+> `exclude` without `include` puts **nothing** in scope — it is not read as
+> "everything except these". Such a config is valid but can never approve
+> anything; the action logs a warning. This is deliberate: an incomplete scope
+> declaration must block approval, never grant it.
+
+> `target_paths` itself is optional. Omitting it disables the scope check
+> entirely — the action logs a warning, and a PR mixing terraform with unrelated
+> changes can be approved. Set it on any monorepo. Note this is the opposite of
+> an empty `include`, where nothing is in scope.
 
 ### Conditions
 
@@ -212,8 +241,9 @@ Put the docs paths in `target_paths` and set `allow-empty-plans: true`:
 ```yaml
 # .github/tf-pr-approver.yml
 target_paths:
-  - terraform/**
-  - docs/**
+  include:
+    - terraform/**
+    - docs/**
 rules:
   - name: no-changes
     when:
