@@ -45,3 +45,6 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           plan-files: '**/tfplan.json'
           config: .github/tf-pr-approver.yml
+          # A docs-only PR may produce no plan JSON at all; the scope check in
+          # the config still guarantees such a PR touches nothing else.
+          allow-empty-plans: 'true'

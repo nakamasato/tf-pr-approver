@@ -25,6 +25,14 @@ inputs:
     description: 'Path to the rules config YAML.'
     required: false
     default: '.github/tf-pr-approver.yml'
+  allow-empty-plans:
+    description: >-
+      Treat "no plan file matched" as OK instead of failing the job. Enable it
+      when a PR that is in scope can legitimately produce no plan JSON
+      (e.g. a docs-only change in a monorepo). Requires `target_paths` in the
+      config: without a scope check an empty plan set would approve any PR.
+    required: false
+    default: 'false'
   pull-request-number:
     description: >-
       Pull request number to approve. Defaults to the PR from the event context.
@@ -40,6 +48,8 @@ outputs:
     description: '"true" if the PR was approved (or already approved), "false" otherwise.'
   matched-rules:
     description: 'JSON object mapping each evaluated plan file to the rule name it matched (or null).'
+  out-of-scope-files:
+    description: 'JSON array of changed files outside `target_paths` (empty when the scope check passed).'
 
 runs:
   using: 'node20'

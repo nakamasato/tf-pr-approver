@@ -32,7 +32,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // node_modules/tunnel/lib/tunnel.js
 var require_tunnel = __commonJS({
@@ -19654,11 +19653,6 @@ var require_dist = __commonJS({
 });
 
 // src/main.ts
-var main_exports = {};
-__export(main_exports, {
-  run: () => run
-});
-module.exports = __toCommonJS(main_exports);
 var fs5 = __toESM(require("fs"));
 
 // node_modules/@actions/core/lib/command.js
@@ -20135,6 +20129,17 @@ function getInput(name, options) {
   }
   return val.trim();
 }
+function getBooleanInput(name, options) {
+  const trueValue = ["true", "True", "TRUE"];
+  const falseValue = ["false", "False", "FALSE"];
+  const val = getInput(name, options);
+  if (trueValue.includes(val))
+    return true;
+  if (falseValue.includes(val))
+    return false;
+  throw new TypeError(`Input does not meet YAML 1.2 "Core Schema" specification: ${name}
+Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
+}
 function setOutput(name, value) {
   const filePath = process.env["GITHUB_OUTPUT"] || "";
   if (filePath) {
@@ -20152,6 +20157,9 @@ function debug(message) {
 }
 function error(message, properties = {}) {
   issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+}
+function warning(message, properties = {}) {
+  issueCommand("warning", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 function info(message) {
   process.stdout.write(message + os4.EOL);
@@ -33759,6 +33767,16 @@ var RuleSchema = external_exports.object({
   when: ConditionsSchema
 }).strict();
 var ConfigSchema = external_exports.object({
+  /**
+   * Files/directories the PR is allowed to touch. If the PR changes anything
+   * outside this list, approval is skipped before the plan is even evaluated.
+   * Omitting it disables the scope gate (every changed file is in scope).
+   */
+  target_paths: external_exports.array(
+    external_exports.string().min(1).refine((p) => !p.startsWith("!"), {
+      message: '"target_paths" is an allow-list; negated patterns (starting with "!") are not supported'
+    })
+  ).nonempty().optional(),
   rules: external_exports.array(RuleSchema).nonempty()
 }).strict();
 function parseConfig(data) {
@@ -33787,6 +33805,50 @@ function loadConfig(path6) {
     throw new Error(`${e.message}
 (in ${path6})`);
   }
+}
+
+// src/changed-files.ts
+var LIST_FILES_LIMIT = 3e3;
+async function listChangedFiles(params) {
+  const { octokit, owner, repo, pullNumber } = params;
+  const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+    owner,
+    repo,
+    pull_number: pullNumber,
+    per_page: 100
+  });
+  if (files.length >= LIST_FILES_LIMIT) {
+    throw new Error(
+      `pull request #${pullNumber} changes ${files.length} files, at or above GitHub's ${LIST_FILES_LIMIT}-file listing limit; the changed-file list may be truncated so the scope check cannot be trusted`
+    );
+  }
+  const paths = /* @__PURE__ */ new Set();
+  for (const file of files) {
+    paths.add(file.filename);
+    if (file.previous_filename) {
+      paths.add(file.previous_filename);
+    }
+  }
+  debug(`changed files: ${JSON.stringify([...paths])}`);
+  return [...paths];
+}
+
+// src/paths.ts
+var GLOB_MAGIC = /[*?[\]{}!()]/;
+var MINIMATCH_OPTIONS = { dot: true, nonegate: true };
+function expandPattern(pattern) {
+  const normalized = pattern.replace(/^\.\//, "").replace(/\/+$/, "");
+  if (GLOB_MAGIC.test(normalized)) {
+    return [normalized];
+  }
+  return [normalized, `${normalized}/**`];
+}
+function isTargetPath(file, patterns) {
+  return patterns.flatMap(expandPattern).some((pattern) => minimatch(file, pattern, MINIMATCH_OPTIONS));
+}
+function checkChangedFiles(files, patterns) {
+  const outOfScopeFiles = files.filter((f) => !isTargetPath(f, patterns));
+  return { matched: outOfScopeFiles.length === 0, outOfScopeFiles };
 }
 
 // src/plan.ts
@@ -33906,31 +33968,69 @@ async function approvePullRequest(params) {
 }
 
 // src/summary.ts
-async function writeSummary(results, approved) {
+var MAX_LISTED_FILES = 20;
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function writeSummary(input) {
+  const { pathCheck, results, approved } = input;
+  const outOfScope = pathCheck && !pathCheck.matched;
   const summary2 = summary.addHeading("tf-pr-approver", 2);
-  summary2.addRaw(
-    approved ? "\u2705 **Approved** \u2014 every plan matched a safe-change rule." : "\u23ED\uFE0F **Skipped** \u2014 at least one plan did not match any rule. Human review required.",
-    true
-  );
-  summary2.addTable([
-    [
-      { data: "Plan file", header: true },
-      { data: "Result", header: true },
-      { data: "Matched rule", header: true }
-    ],
-    ...results.map((r) => [
-      r.file,
-      r.evaluation.matched ? "\u2705 matched" : "\u274C no match",
-      r.evaluation.matchedRule ?? "-"
-    ])
-  ]);
-  for (const r of results) {
-    if (r.evaluation.matched) continue;
-    const reasons = r.evaluation.ruleEvaluations.map((e) => `- \`${e.rule}\`: ${e.reason ?? "n/a"}`).join("\n");
-    summary2.addDetails(`Why "${r.file}" did not match any rule`, `
+  let verdict;
+  if (approved) {
+    verdict = "\u2705 **Approved** \u2014 the PR stays within scope and every plan matched a safe-change rule.";
+  } else if (outOfScope) {
+    verdict = "\u23ED\uFE0F **Skipped** \u2014 the PR changes files outside `target_paths`. Human review required.";
+  } else {
+    verdict = "\u23ED\uFE0F **Skipped** \u2014 at least one plan did not match any rule. Human review required.";
+  }
+  summary2.addRaw(verdict, true);
+  summary2.addHeading("Scope check", 3);
+  if (!pathCheck) {
+    summary2.addRaw(
+      "\u26A0\uFE0F No `target_paths` configured \u2014 every changed file is treated as in scope.",
+      true
+    );
+  } else if (pathCheck.matched) {
+    summary2.addRaw("\u2705 Every changed file is inside `target_paths`.", true);
+  } else {
+    const listed = pathCheck.outOfScopeFiles.slice(0, MAX_LISTED_FILES);
+    const rest = pathCheck.outOfScopeFiles.length - listed.length;
+    summary2.addRaw(
+      `\u274C ${pathCheck.outOfScopeFiles.length} changed file(s) outside \`target_paths\`:`,
+      true
+    );
+    summary2.addList(listed.map((f) => `<code>${escapeHtml(f)}</code>`));
+    if (rest > 0) {
+      summary2.addRaw(`\u2026and ${rest} more.`, true);
+    }
+  }
+  if (!outOfScope) {
+    summary2.addHeading("Plan evaluation", 3);
+    if (results.length === 0) {
+      summary2.addRaw("No plan files to evaluate.", true);
+    } else {
+      summary2.addTable([
+        [
+          { data: "Plan file", header: true },
+          { data: "Result", header: true },
+          { data: "Matched rule", header: true }
+        ],
+        ...results.map((r) => [
+          r.file,
+          r.evaluation.matched ? "\u2705 matched" : "\u274C no match",
+          r.evaluation.matchedRule ?? "-"
+        ])
+      ]);
+    }
+    for (const r of results) {
+      if (r.evaluation.matched) continue;
+      const reasons = r.evaluation.ruleEvaluations.map((e) => `- \`${e.rule}\`: ${e.reason ?? "n/a"}`).join("\n");
+      summary2.addDetails(`Why "${r.file}" did not match any rule`, `
 
 ${reasons}
 `);
+    }
   }
   await summary2.write();
 }
@@ -33964,10 +34064,51 @@ async function run() {
     const planInput = getInput("plan-files", { required: true });
     const configPath = getInput("config");
     const approveMessage = getInput("approve-message");
+    const allowEmptyPlans = getBooleanInput("allow-empty-plans");
     const config = loadConfig(configPath);
+    if (allowEmptyPlans && !config.target_paths) {
+      throw new Error(
+        '"allow-empty-plans: true" requires "target_paths" in the config: without a scope check, a PR that produces no plan would be approved unconditionally'
+      );
+    }
+    const octokit = getOctokit(token);
+    const { owner, repo } = context2.repo;
+    const pullNumber = getPullNumber();
+    let pathCheck = null;
+    if (config.target_paths) {
+      const changedFiles = await listChangedFiles({ octokit, owner, repo, pullNumber });
+      pathCheck = checkChangedFiles(changedFiles, config.target_paths);
+      info(
+        `Scope check: ${changedFiles.length} changed file(s) against ${config.target_paths.length} target path(s) \u2014 ` + (pathCheck.matched ? "all in scope." : `${pathCheck.outOfScopeFiles.length} out of scope.`)
+      );
+      for (const f of pathCheck.outOfScopeFiles) {
+        info(`  out of scope: ${f}`);
+      }
+    } else {
+      warning(
+        'config has no "target_paths": every changed file is treated as in scope, so a PR that also changes non-terraform files can still be auto-approved.'
+      );
+    }
+    if (pathCheck && !pathCheck.matched) {
+      info(
+        'PR changes files outside "target_paths"; skipping approval (human review required).'
+      );
+      setOutput("approved", "false");
+      setOutput("matched-rules", "{}");
+      setOutput("out-of-scope-files", JSON.stringify(pathCheck.outOfScopeFiles));
+      await writeSummary({ pathCheck, results: [], approved: false });
+      return;
+    }
     const planFiles = await resolvePlanFiles(planInput);
+    if (planFiles.length === 0 && !allowEmptyPlans) {
+      throw new Error(
+        `no plan files matched: ${planInput} (set "allow-empty-plans: true" if a PR in scope legitimately produces no plan, e.g. a docs-only change)`
+      );
+    }
     if (planFiles.length === 0) {
-      throw new Error(`no plan files matched: ${planInput}`);
+      warning(
+        `no plan files matched: ${planInput} \u2014 no plan was evaluated; approving on the scope check alone. Verify that the plan job actually produced the plan JSON.`
+      );
     }
     info(`Evaluating ${planFiles.length} plan file(s) against ${config.rules.length} rule(s).`);
     const results = planFiles.map((file) => {
@@ -33985,9 +34126,6 @@ async function run() {
       matchedRules[r.file] = r.evaluation.matchedRule;
     }
     if (approved) {
-      const octokit = getOctokit(token);
-      const { owner, repo } = context2.repo;
-      const pullNumber = getPullNumber();
       const { data: pr } = await octokit.rest.pulls.get({
         owner,
         repo,
@@ -34006,16 +34144,15 @@ async function run() {
     }
     setOutput("approved", String(approved));
     setOutput("matched-rules", JSON.stringify(matchedRules));
-    await writeSummary(results, approved);
+    setOutput("out-of-scope-files", "[]");
+    await writeSummary({ pathCheck, results, approved });
   } catch (error2) {
     setFailed(error2 instanceof Error ? error2.message : String(error2));
   }
 }
+
+// src/index.ts
 run();
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  run
-});
 /*! Bundled license information:
 
 undici/lib/web/fetch/body.js:

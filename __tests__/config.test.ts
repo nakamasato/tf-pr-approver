@@ -15,6 +15,34 @@ describe('parseConfig', () => {
     expect(cfg.rules).toHaveLength(2)
   })
 
+  it('accepts target_paths', () => {
+    const cfg = parseConfig({
+      target_paths: ['terraform/**', 'docs'],
+      rules: [{ name: 'no-changes', when: { no_changes: true } }],
+    })
+    expect(cfg.target_paths).toEqual(['terraform/**', 'docs'])
+  })
+
+  it('leaves target_paths undefined when omitted (scope gate disabled)', () => {
+    const cfg = parseConfig({ rules: [{ name: 'x', when: { no_changes: true } }] })
+    expect(cfg.target_paths).toBeUndefined()
+  })
+
+  it('rejects an empty target_paths list', () => {
+    expect(() =>
+      parseConfig({ target_paths: [], rules: [{ name: 'x', when: { no_changes: true } }] })
+    ).toThrow(/invalid config/)
+  })
+
+  it('rejects a negated target_paths pattern', () => {
+    expect(() =>
+      parseConfig({
+        target_paths: ['terraform/**', '!docs/**'],
+        rules: [{ name: 'x', when: { no_changes: true } }],
+      })
+    ).toThrow(/negated patterns/)
+  })
+
   it('rejects config with no rules', () => {
     expect(() => parseConfig({ rules: [] })).toThrow(/invalid config/)
   })
