@@ -32,7 +32,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // node_modules/tunnel/lib/tunnel.js
 var require_tunnel = __commonJS({
@@ -19654,11 +19653,6 @@ var require_dist = __commonJS({
 });
 
 // src/main.ts
-var main_exports = {};
-__export(main_exports, {
-  run: () => run
-});
-module.exports = __toCommonJS(main_exports);
 var fs5 = __toESM(require("fs"));
 
 // node_modules/@actions/core/lib/command.js
@@ -33778,7 +33772,11 @@ var ConfigSchema = external_exports.object({
    * outside this list, approval is skipped before the plan is even evaluated.
    * Omitting it disables the scope gate (every changed file is in scope).
    */
-  target_paths: external_exports.array(external_exports.string().min(1)).nonempty().optional(),
+  target_paths: external_exports.array(
+    external_exports.string().min(1).refine((p) => !p.startsWith("!"), {
+      message: '"target_paths" is an allow-list; negated patterns (starting with "!") are not supported'
+    })
+  ).nonempty().optional(),
   rules: external_exports.array(RuleSchema).nonempty()
 }).strict();
 function parseConfig(data) {
@@ -33837,7 +33835,7 @@ async function listChangedFiles(params) {
 
 // src/paths.ts
 var GLOB_MAGIC = /[*?[\]{}!()]/;
-var MINIMATCH_OPTIONS = { dot: true };
+var MINIMATCH_OPTIONS = { dot: true, nonegate: true };
 function expandPattern(pattern) {
   const normalized = pattern.replace(/^\.\//, "").replace(/\/+$/, "");
   if (GLOB_MAGIC.test(normalized)) {
@@ -33971,6 +33969,9 @@ async function approvePullRequest(params) {
 
 // src/summary.ts
 var MAX_LISTED_FILES = 20;
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 async function writeSummary(input) {
   const { pathCheck, results, approved } = input;
   const outOfScope = pathCheck && !pathCheck.matched;
@@ -33999,7 +34000,7 @@ async function writeSummary(input) {
       `\u274C ${pathCheck.outOfScopeFiles.length} changed file(s) outside \`target_paths\`:`,
       true
     );
-    summary2.addList(listed.map((f) => `<code>${f}</code>`));
+    summary2.addList(listed.map((f) => `<code>${escapeHtml(f)}</code>`));
     if (rest > 0) {
       summary2.addRaw(`\u2026and ${rest} more.`, true);
     }
@@ -34065,6 +34066,11 @@ async function run() {
     const approveMessage = getInput("approve-message");
     const allowEmptyPlans = getBooleanInput("allow-empty-plans");
     const config = loadConfig(configPath);
+    if (allowEmptyPlans && !config.target_paths) {
+      throw new Error(
+        '"allow-empty-plans: true" requires "target_paths" in the config: without a scope check, a PR that produces no plan would be approved unconditionally'
+      );
+    }
     const octokit = getOctokit(token);
     const { owner, repo } = context2.repo;
     const pullNumber = getPullNumber();
@@ -34097,6 +34103,11 @@ async function run() {
     if (planFiles.length === 0 && !allowEmptyPlans) {
       throw new Error(
         `no plan files matched: ${planInput} (set "allow-empty-plans: true" if a PR in scope legitimately produces no plan, e.g. a docs-only change)`
+      );
+    }
+    if (planFiles.length === 0) {
+      warning(
+        `no plan files matched: ${planInput} \u2014 no plan was evaluated; approving on the scope check alone. Verify that the plan job actually produced the plan JSON.`
       );
     }
     info(`Evaluating ${planFiles.length} plan file(s) against ${config.rules.length} rule(s).`);
@@ -34139,11 +34150,9 @@ async function run() {
     setFailed(error2 instanceof Error ? error2.message : String(error2));
   }
 }
+
+// src/index.ts
 run();
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  run
-});
 /*! Bundled license information:
 
 undici/lib/web/fetch/body.js:

@@ -29,7 +29,8 @@ inputs:
     description: >-
       Treat "no plan file matched" as OK instead of failing the job. Enable it
       when a PR that is in scope can legitimately produce no plan JSON
-      (e.g. a docs-only change in a monorepo).
+      (e.g. a docs-only change in a monorepo). Requires `target_paths` in the
+      config: without a scope check an empty plan set would approve any PR.
     required: false
     default: 'false'
   pull-request-number:

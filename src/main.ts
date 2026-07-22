@@ -1,5 +1,7 @@
 /**
- * Entry point / orchestration.
+ * Orchestration. The runtime entry point is `src/index.ts`, which just calls
+ * `run()`; keeping the invocation out of this module lets the tests import and
+ * drive `run()` directly.
  *
  * Flow:
  *   1. load + validate config
@@ -61,6 +63,16 @@ export async function run(): Promise<void> {
 
     const config = loadConfig(configPath)
 
+    // Without `target_paths` there is no scope gate, and with `allow-empty-plans`
+    // an empty plan set evaluates to `[].every(...) === true`. Together they would
+    // approve *any* PR unconditionally, so refuse the combination up front.
+    if (allowEmptyPlans && !config.target_paths) {
+      throw new Error(
+        '"allow-empty-plans: true" requires "target_paths" in the config: without a scope ' +
+          'check, a PR that produces no plan would be approved unconditionally'
+      )
+    }
+
     const octokit = github.getOctokit(token)
     const { owner, repo } = github.context.repo
     const pullNumber = getPullNumber()
@@ -104,6 +116,15 @@ export async function run(): Promise<void> {
       throw new Error(
         `no plan files matched: ${planInput} (set "allow-empty-plans: true" if a PR in scope ` +
           'legitimately produces no plan, e.g. a docs-only change)'
+      )
+    }
+    if (planFiles.length === 0) {
+      // The scope check is the only thing standing between this PR and an
+      // approval — say so loudly, because a lost artifact or a typo in
+      // `plan-files` looks exactly like a legitimate docs-only change.
+      core.warning(
+        `no plan files matched: ${planInput} — no plan was evaluated; approving on the ` +
+          'scope check alone. Verify that the plan job actually produced the plan JSON.'
       )
     }
     core.info(`Evaluating ${planFiles.length} plan file(s) against ${config.rules.length} rule(s).`)
@@ -152,5 +173,3 @@ export async function run(): Promise<void> {
     core.setFailed(error instanceof Error ? error.message : String(error))
   }
 }
-
-run()

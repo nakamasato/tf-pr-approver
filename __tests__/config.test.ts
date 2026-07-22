@@ -34,6 +34,15 @@ describe('parseConfig', () => {
     ).toThrow(/invalid config/)
   })
 
+  it('rejects a negated target_paths pattern', () => {
+    expect(() =>
+      parseConfig({
+        target_paths: ['terraform/**', '!docs/**'],
+        rules: [{ name: 'x', when: { no_changes: true } }],
+      })
+    ).toThrow(/negated patterns/)
+  })
+
   it('rejects config with no rules', () => {
     expect(() => parseConfig({ rules: [] })).toThrow(/invalid config/)
   })

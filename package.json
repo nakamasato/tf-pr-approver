@@ -2,10 +2,10 @@
   "name": "tf-pr-approver",
   "version": "0.1.0",
   "description": "Auto-approve Terraform PRs based on declarative rules evaluated against the terraform plan JSON, using a GitHub App identity.",
-  "main": "lib/main.js",
+  "main": "lib/index.js",
   "scripts": {
     "build": "tsc",
-    "package": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --outfile=dist/index.js",
+    "package": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --outfile=dist/index.js",
     "all": "npm run build && npm run test && npm run package",
     "test": "vitest run",
     "test:watch": "vitest",

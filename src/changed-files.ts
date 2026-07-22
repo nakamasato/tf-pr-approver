@@ -40,7 +40,7 @@ export async function listChangedFiles(params: ListChangedFilesParams): Promise<
   }
 
   const paths = new Set<string>()
-  for (const file of files as Array<{ filename: string; previous_filename?: string }>) {
+  for (const file of files) {
     paths.add(file.filename)
     if (file.previous_filename) {
       paths.add(file.previous_filename)

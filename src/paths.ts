@@ -20,7 +20,14 @@ export interface PathCheckResult {
 /** Characters that make a pattern a glob rather than a literal path. */
 const GLOB_MAGIC = /[*?[\]{}!()]/
 
-const MINIMATCH_OPTIONS = { dot: true } as const
+/**
+ * `nonegate` is deliberate: without it minimatch reads a leading `!` as a
+ * negation, so a single `!docs/**` in `target_paths` would make `isTargetPath`
+ * return true for almost every file and silently disable the scope gate.
+ * `config.ts` rejects such patterns outright; this keeps the pure function
+ * fail-closed on its own too.
+ */
+const MINIMATCH_OPTIONS = { dot: true, nonegate: true } as const
 
 /**
  * A pattern without glob characters is ambiguous: users write `docs` meaning

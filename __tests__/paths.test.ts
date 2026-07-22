@@ -32,6 +32,14 @@ describe('isTargetPath', () => {
     expect(isTargetPath('docs/guide.md', ['./docs/**'])).toBe(true)
   })
 
+  it('does not treat a leading "!" as a negation that widens the scope', () => {
+    // With minimatch's default `negate` handling, `!docs/**` matches everything
+    // that is *not* under docs/, which would silently disable the scope gate.
+    expect(isTargetPath('app/main.go', ['!docs/**'])).toBe(false)
+    expect(isTargetPath('terraform/main.tf', ['terraform/**', '!docs/**'])).toBe(true)
+    expect(checkChangedFiles(['app/main.go'], ['terraform/**', '!docs/**']).matched).toBe(false)
+  })
+
   it('returns false when there are no patterns', () => {
     expect(isTargetPath('docs/guide.md', [])).toBe(false)
   })

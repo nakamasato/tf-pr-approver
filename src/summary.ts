@@ -21,6 +21,15 @@ export interface SummaryInput {
 /** Keep the summary readable when a PR touches a large number of files. */
 const MAX_LISTED_FILES = 20
 
+/** File paths are attacker-controlled; escape before embedding them in HTML. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 export async function writeSummary(input: SummaryInput): Promise<void> {
   const { pathCheck, results, approved } = input
   const outOfScope = pathCheck && !pathCheck.matched
@@ -53,7 +62,7 @@ export async function writeSummary(input: SummaryInput): Promise<void> {
       `❌ ${pathCheck.outOfScopeFiles.length} changed file(s) outside \`target_paths\`:`,
       true
     )
-    summary.addList(listed.map((f) => `<code>${f}</code>`))
+    summary.addList(listed.map((f) => `<code>${escapeHtml(f)}</code>`))
     if (rest > 0) {
       summary.addRaw(`…and ${rest} more.`, true)
     }

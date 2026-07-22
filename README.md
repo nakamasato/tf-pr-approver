@@ -134,6 +134,10 @@ entry, otherwise the action skips approval **before** looking at any plan.
 Patterns are [minimatch](https://github.com/isaacs/minimatch) globs with
 `dot: true`, so `.github/**` matches dot directories.
 
+`target_paths` is an **allow-list**, so negation is not supported: a pattern
+starting with `!` is rejected by config validation. To narrow the scope, list
+the paths you do allow rather than the ones you want to exclude.
+
 > `target_paths` is optional. Omitting it disables the scope check — the action
 > logs a warning, and a PR mixing terraform with unrelated changes can be
 > approved. Set it on any monorepo.
@@ -163,6 +167,10 @@ At least one condition is required per rule (an empty `when` is rejected).
 - **Any plan matched no rule** → the action **skips** approval and writes the
   reason to the Job Summary. It exits successfully — a human reviews the PR.
 - **Malformed config / input / plan JSON** → the action **fails** the job.
+- **The pull request number cannot be resolved** → the action **fails** the job.
+  The scope check needs the PR's changed files, so the number is resolved on
+  every run; use the `pull-request-number` input in workflows that do not run on
+  a `pull_request` event.
 
 Skips always exit successfully; only misconfiguration fails the job.
 
@@ -200,6 +208,14 @@ with:
 
 A PR touching only `docs/**` passes the scope check and has nothing to evaluate,
 so it is approved. A PR touching `docs/**` *and* `app/**` fails the scope check.
+
+> `allow-empty-plans: true` **requires** `target_paths`; the action fails
+> otherwise. With no scope check, an empty plan set would approve any PR.
+>
+> It also makes the scope check the *only* gate whenever the plan JSON is
+> missing — a failed artifact upload or a typo in `plan-files` is
+> indistinguishable from a legitimate docs-only PR. The action logs a warning in
+> that case; keep the plan job's failure fatal so it cannot happen silently.
 
 ## Development
 
