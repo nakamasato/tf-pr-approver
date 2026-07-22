@@ -1,0 +1,47 @@
+# Example consumer workflow.
+# Save as .github/workflows/tf-auto-approve.yml in your Terraform repository.
+name: Terraform Auto Approve
+
+on:
+  pull_request:
+
+# Least privilege: only what the approval step needs.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tf-auto-approve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      # Produce the machine-readable plan JSON that the action evaluates.
+      - name: Terraform plan
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -out=tfplan
+          terraform show -json tfplan > tfplan.json
+
+      # Mint a GitHub App installation token. github-actions[bot] CANNOT approve
+      # PRs, so a distinct App identity is required for the approval to count
+      # toward required reviews.
+      #
+      # The variable/secret names below are just examples — use whatever names
+      # you already have. This action never reads them: it only takes the
+      # resulting token via the `github-token` input.
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: nakamasato/tf-pr-approver@v1
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          plan-files: '**/tfplan.json'
+          config: .github/tf-pr-approver.yml

@@ -1,0 +1,45 @@
+{
+  "name": "tf-pr-approver",
+  "version": "0.1.0",
+  "description": "Auto-approve Terraform PRs based on declarative rules evaluated against the terraform plan JSON, using a GitHub App identity.",
+  "main": "lib/main.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --sourcemap --outfile=dist/index.js",
+    "all": "npm run build && npm run test && npm run package",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src __tests__",
+    "format": "prettier --write \"{src,__tests__}/**/*.ts\"",
+    "format:check": "prettier --check \"{src,__tests__}/**/*.ts\""
+  },
+  "keywords": [
+    "github-actions",
+    "terraform",
+    "auto-approve",
+    "pull-request"
+  ],
+  "author": "Masato Naka",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@actions/glob": "^0.7.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^8.57.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
+  }
+}

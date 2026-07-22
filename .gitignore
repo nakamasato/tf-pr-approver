@@ -1,0 +1,8 @@
+node_modules/
+lib/
+coverage/
+*.log
+.DS_Store
+
+# NOTE: dist/ is intentionally NOT ignored. The bundled action is committed
+# and kept in sync with src/ (enforced by .github/workflows/check-dist.yml).

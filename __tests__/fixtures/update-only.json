@@ -1,0 +1,18 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "resource_changes": [
+    {
+      "address": "aws_s3_bucket_policy.this",
+      "type": "aws_s3_bucket_policy",
+      "name": "this",
+      "change": { "actions": ["update"] }
+    },
+    {
+      "address": "aws_s3_bucket.this",
+      "type": "aws_s3_bucket",
+      "name": "this",
+      "change": { "actions": ["no-op"] }
+    }
+  ]
+}

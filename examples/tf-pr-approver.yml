@@ -1,0 +1,29 @@
+# Example config for tf-pr-approver.
+# Place this at .github/tf-pr-approver.yml in your Terraform repository.
+#
+# Rules are OR'd: a plan is considered "safe" if it matches at least ONE rule.
+# Within a rule, all conditions under `when` must hold (AND).
+rules:
+  # Approve when the plan has no infrastructure changes at all
+  # (equivalent to `terraform plan` printing "No changes").
+  - name: no-changes
+    when:
+      no_changes: true
+
+  # Approve when only bucket policies are updated, and nothing is deleted.
+  - name: safe-policy-updates
+    when:
+      denied_actions: [delete]
+      allowed_actions: [update]
+      allowed_resource_types:
+        - aws_s3_bucket_policy
+
+  # Approve tag-only style changes across a fixed set of resource types,
+  # as long as nothing is destroyed.
+  - name: additive-only
+    when:
+      denied_actions: [delete]
+      allowed_actions: [create, update]
+      denied_resource_types:
+        - aws_iam_role
+        - aws_iam_policy

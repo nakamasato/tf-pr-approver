@@ -1,0 +1,46 @@
+name: 'Terraform Auto Approver'
+description: >-
+  Auto-approve Terraform pull requests when the terraform plan JSON matches
+  declarative safety rules, using a GitHub App identity so the approval counts
+  toward required reviews.
+author: 'Masato Naka'
+branding:
+  icon: 'check-circle'
+  color: 'purple'
+
+inputs:
+  github-token:
+    description: >-
+      GitHub App installation token with `pull-requests: write`. Generate it in
+      your workflow with actions/create-github-app-token and pass its output here.
+      Do NOT use the default GITHUB_TOKEN: github-actions[bot] cannot approve PRs.
+    required: true
+  plan-files:
+    description: >-
+      Glob pattern(s) or newline-separated paths to the terraform plan JSON
+      file(s) to evaluate (produced by `terraform show -json <planfile>`).
+      Every matched plan must satisfy at least one rule for the PR to be approved.
+    required: true
+  config:
+    description: 'Path to the rules config YAML.'
+    required: false
+    default: '.github/tf-pr-approver.yml'
+  pull-request-number:
+    description: >-
+      Pull request number to approve. Defaults to the PR from the event context.
+    required: false
+    default: ''
+  approve-message:
+    description: 'Body text used for the approval review.'
+    required: false
+    default: 'Auto-approved by tf-pr-approver: the terraform plan matched the configured safe-change rules.'
+
+outputs:
+  approved:
+    description: '"true" if the PR was approved (or already approved), "false" otherwise.'
+  matched-rules:
+    description: 'JSON object mapping each evaluated plan file to the rule name it matched (or null).'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
