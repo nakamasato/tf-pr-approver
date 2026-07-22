@@ -27,9 +27,12 @@ jobs:
           terraform plan -input=false -out=tfplan
           terraform show -json tfplan > tfplan.json
 
-      # Mint a GitHub App installation token. github-actions[bot] CANNOT approve
-      # PRs, so a distinct App identity is required for the approval to count
-      # toward required reviews.
+      # Mint a GitHub App installation token. An approval by github-actions[bot]
+      # (the default GITHUB_TOKEN) is blocked unless "Allow GitHub Actions to
+      # create and approve pull requests" is enabled, and even then it is not
+      # honoured as an approving review by branch protection / rulesets. A
+      # distinct App identity is required for the approval to count toward
+      # required reviews. See the README for details.
       #
       # The variable/secret names below are just examples — use whatever names
       # you already have. This action never reads them: it only takes the
