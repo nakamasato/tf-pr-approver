@@ -34,7 +34,12 @@ matter, without weakening the required-review rule.
 > - Even with that setting on, an approval by `github-actions[bot]` is not
 >   honoured as an approving review by branch protection / rulesets — by design,
 >   so a workflow cannot approve its own changes. It shows up in the UI but the
->   required-approvals count does not move.
+>   required-approvals count does not move
+>   ([community discussion #181487](https://github.com/orgs/community/discussions/181487)).
+>   GitHub does not document this for `github-actions[bot]` directly, but it does
+>   state the same behaviour for the analogous case of Copilot code review:
+>   ["Copilot's reviews do not count toward required approvals for the pull
+>   request, and Copilot's reviews will not block merging changes"](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
 > - A PR author also can't approve their own PR.
 >
 > A GitHub App installation token acts as a **distinct identity**, so its
