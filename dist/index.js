@@ -33766,17 +33766,25 @@ var RuleSchema = external_exports.object({
   name: external_exports.string().min(1),
   when: ConditionsSchema
 }).strict();
+var PathPatternSchema = external_exports.string().min(1).refine((p) => !p.startsWith("!"), {
+  message: 'negated patterns (starting with "!") are not supported; use "target_paths.exclude" instead'
+});
+var TargetPathsSchema = external_exports.object({
+  /** Paths the PR is allowed to touch. Omitting it puts no file in scope. */
+  include: external_exports.array(PathPatternSchema).nonempty().optional(),
+  /** Paths carved back out of `include`. Takes precedence over `include`. */
+  exclude: external_exports.array(PathPatternSchema).nonempty().optional()
+}).strict().refine((obj) => obj.include !== void 0 || obj.exclude !== void 0, {
+  message: '"target_paths" must specify "include" and/or "exclude"'
+});
 var ConfigSchema = external_exports.object({
   /**
-   * Files/directories the PR is allowed to touch. If the PR changes anything
-   * outside this list, approval is skipped before the plan is even evaluated.
-   * Omitting it disables the scope gate (every changed file is in scope).
+   * Scope gate. A PR changing anything outside it is skipped before the plan
+   * is even evaluated. Omitting `target_paths` disables the gate entirely
+   * (every changed file is in scope) — which is not the same as an empty
+   * `include`, where nothing is in scope and nothing is ever approved.
    */
-  target_paths: external_exports.array(
-    external_exports.string().min(1).refine((p) => !p.startsWith("!"), {
-      message: '"target_paths" is an allow-list; negated patterns (starting with "!") are not supported'
-    })
-  ).nonempty().optional(),
+  target_paths: TargetPathsSchema.optional(),
   rules: external_exports.array(RuleSchema).nonempty()
 }).strict();
 function parseConfig(data) {
@@ -33843,11 +33851,18 @@ function expandPattern(pattern) {
   }
   return [normalized, `${normalized}/**`];
 }
-function isTargetPath(file, patterns) {
+function matchesAny(file, patterns) {
   return patterns.flatMap(expandPattern).some((pattern) => minimatch(file, pattern, MINIMATCH_OPTIONS));
 }
-function checkChangedFiles(files, patterns) {
-  const outOfScopeFiles = files.filter((f) => !isTargetPath(f, patterns));
+function isTargetPath(file, targets) {
+  const { include = [], exclude = [] } = targets;
+  if (matchesAny(file, exclude)) {
+    return false;
+  }
+  return matchesAny(file, include);
+}
+function checkChangedFiles(files, targets) {
+  const outOfScopeFiles = files.filter((f) => !isTargetPath(f, targets));
   return { matched: outOfScopeFiles.length === 0, outOfScopeFiles };
 }
 
@@ -34077,10 +34092,16 @@ async function run() {
     let pathCheck = null;
     if (config.target_paths) {
       const changedFiles = await listChangedFiles({ octokit, owner, repo, pullNumber });
+      const { include = [], exclude = [] } = config.target_paths;
       pathCheck = checkChangedFiles(changedFiles, config.target_paths);
       info(
-        `Scope check: ${changedFiles.length} changed file(s) against ${config.target_paths.length} target path(s) \u2014 ` + (pathCheck.matched ? "all in scope." : `${pathCheck.outOfScopeFiles.length} out of scope.`)
+        `Scope check: ${changedFiles.length} changed file(s) against ${include.length} include / ${exclude.length} exclude pattern(s) \u2014 ` + (pathCheck.matched ? "all in scope." : `${pathCheck.outOfScopeFiles.length} out of scope.`)
       );
+      if (include.length === 0) {
+        warning(
+          '"target_paths" declares no "include" patterns: no file is in scope, so this PR can never be approved. Add the paths you want to allow.'
+        );
+      }
       for (const f of pathCheck.outOfScopeFiles) {
         info(`  out of scope: ${f}`);
       }

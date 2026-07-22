@@ -46,7 +46,8 @@ beforeEach(() => {
   configPath = path.join(tmpDir, 'config.yml')
   writeConfig(`
 target_paths:
-  - terraform/**
+  include:
+    - terraform/**
 rules:
   - name: no changes
     when:
@@ -167,6 +168,79 @@ describe('run: scope gate', () => {
     expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('no "target_paths"'))
     expect(listChangedFiles).not.toHaveBeenCalled()
     expect(outputs().approved).toBe('true')
+  })
+
+  it('skips a file carved out by exclude even though include covers it', async () => {
+    writeConfig(`
+target_paths:
+  include:
+    - terraform/**
+  exclude:
+    - terraform/prod/**
+rules:
+  - name: no changes
+    when:
+      no_changes: true
+`)
+    vi.mocked(listChangedFiles).mockResolvedValue(['terraform/dev/a.tf', 'terraform/prod/b.tf'])
+    planFiles = [path.join(FIXTURES, 'no-changes.json')]
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(approvePullRequest).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('false')
+    expect(JSON.parse(outputs()['out-of-scope-files'])).toEqual(['terraform/prod/b.tf'])
+  })
+
+  it('never approves when target_paths has exclude but no include', async () => {
+    // An `exclude` with no `include` declares no scope at all. Reading it as
+    // "everything except these" would turn an incomplete config into a blanket
+    // auto-approval, so it must put nothing in scope and warn loudly.
+    writeConfig(`
+target_paths:
+  exclude:
+    - app/**
+rules:
+  - name: no changes
+    when:
+      no_changes: true
+`)
+    vi.mocked(listChangedFiles).mockResolvedValue(['terraform/main.tf'])
+    planFiles = [path.join(FIXTURES, 'no-changes.json')]
+
+    await run()
+
+    // A safe skip, not a crash: the config is valid, it just allows nothing.
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(approvePullRequest).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('false')
+    expect(JSON.parse(outputs()['out-of-scope-files'])).toEqual(['terraform/main.tf'])
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('no "include" patterns'))
+  })
+
+  it('never approves with exclude but no include, even for a docs-only PR', async () => {
+    // The dangerous variant: `allow-empty-plans` means the scope gate is the
+    // only check left, so an "everything except these" reading would approve
+    // this PR outright.
+    writeConfig(`
+target_paths:
+  exclude:
+    - app/**
+rules:
+  - name: no changes
+    when:
+      no_changes: true
+`)
+    inputs['allow-empty-plans'] = 'true'
+    vi.mocked(listChangedFiles).mockResolvedValue(['docs/a.md'])
+    planFiles = []
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(approvePullRequest).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('false')
   })
 })
 

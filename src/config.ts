@@ -33,34 +33,49 @@ const RuleSchema = z
   })
   .strict()
 
+// A leading "!" is a minimatch negation. Exclusion is expressed by the
+// `exclude` list, not by a prefix: a "!" inside `include` would widen the scope
+// instead of narrowing it, and a "!" inside `exclude` would be a double
+// negation that widens it again. Reject it rather than silently ignore it.
+const PathPatternSchema = z
+  .string()
+  .min(1)
+  .refine((p) => !p.startsWith('!'), {
+    message:
+      'negated patterns (starting with "!") are not supported; use "target_paths.exclude" instead',
+  })
+
+const TargetPathsSchema = z
+  .object({
+    /** Paths the PR is allowed to touch. Omitting it puts no file in scope. */
+    include: z.array(PathPatternSchema).nonempty().optional(),
+    /** Paths carved back out of `include`. Takes precedence over `include`. */
+    exclude: z.array(PathPatternSchema).nonempty().optional(),
+  })
+  .strict()
+  // An entirely empty `target_paths: {}` puts no file in scope, so it can only
+  // ever skip. That is safe but always useless — flag it as the typo it is.
+  // `exclude`-only is left alone: it is fail-closed and the check reports it.
+  .refine((obj) => obj.include !== undefined || obj.exclude !== undefined, {
+    message: '"target_paths" must specify "include" and/or "exclude"',
+  })
+
 const ConfigSchema = z
   .object({
     /**
-     * Files/directories the PR is allowed to touch. If the PR changes anything
-     * outside this list, approval is skipped before the plan is even evaluated.
-     * Omitting it disables the scope gate (every changed file is in scope).
+     * Scope gate. A PR changing anything outside it is skipped before the plan
+     * is even evaluated. Omitting `target_paths` disables the gate entirely
+     * (every changed file is in scope) — which is not the same as an empty
+     * `include`, where nothing is in scope and nothing is ever approved.
      */
-    target_paths: z
-      .array(
-        z
-          .string()
-          .min(1)
-          // A leading "!" is a minimatch negation. `target_paths` is an
-          // allow-list, so an exclusion pattern here would widen the scope
-          // instead of narrowing it — reject it rather than silently ignore it.
-          .refine((p) => !p.startsWith('!'), {
-            message:
-              '"target_paths" is an allow-list; negated patterns (starting with "!") are not supported',
-          })
-      )
-      .nonempty()
-      .optional(),
+    target_paths: TargetPathsSchema.optional(),
     rules: z.array(RuleSchema).nonempty(),
   })
   .strict()
 
 export type Conditions = z.infer<typeof ConditionsSchema>
 export type Rule = z.infer<typeof RuleSchema>
+export type TargetPathsConfig = z.infer<typeof TargetPathsSchema>
 export type Config = z.infer<typeof ConfigSchema>
 
 /** Parse a config object (already loaded from YAML/JSON). Exposed for testing. */

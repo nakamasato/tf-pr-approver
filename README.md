@@ -4,11 +4,19 @@ A GitHub Action that **auto-approves Terraform pull requests** when the
 `terraform plan` result matches declarative safety rules — using a **GitHub App
 identity** so the approval counts toward your branch's required reviews.
 
+> [!NOTE]
+> **This project is in alpha.** Inputs, outputs and the config schema may change
+> without notice, and breaking changes can land in minor releases. Pin to a
+> specific tag or commit SHA, and review the release notes before upgrading.
+
 ## Why
 
 You want **Required approvals ≥ 1** on your Terraform repo, but:
 
-- **CodeOwners** only lets you gate by file/directory, not by *what actually changes*.
+- **[CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)**
+  only lets you gate by path — its patterns "follow most of the same rules used
+  in gitignore files" — so it can't distinguish a no-op `plan` from a `destroy`
+  in the same directory.
 - Many PRs are provably safe (a `plan` with **no changes**, or only a narrow set
   of resource updates) and don't need a human to click approve.
 
@@ -16,10 +24,27 @@ You want **Required approvals ≥ 1** on your Terraform repo, but:
 it's safe, approves the PR as a bot — so humans only review the changes that
 matter, without weakening the required-review rule.
 
-> `github-actions[bot]` (the default `GITHUB_TOKEN`) **cannot approve PRs**, and
-> a PR author can't approve their own PR. A GitHub App is a distinct identity
-> whose approval *does* count toward required reviews — that's why this action
-> uses one.
+> [!IMPORTANT]
+> **Why a GitHub App, and not the default `GITHUB_TOKEN`?**
+>
+> - Approving with `GITHUB_TOKEN` is blocked outright unless
+>   [*Allow GitHub Actions to create and approve pull requests*](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)
+>   is enabled at both the org and repo level. It is off by default, and many
+>   orgs deliberately keep it off.
+> - Even with that setting on, an approval by `github-actions[bot]` is not
+>   honoured as an approving review by branch protection / rulesets — by design,
+>   so a workflow cannot approve its own changes. It shows up in the UI but the
+>   required-approvals count does not move
+>   ([community discussion #181487](https://github.com/orgs/community/discussions/181487)).
+>   GitHub does not document this for `github-actions[bot]` directly, but it does
+>   state the same behaviour for the analogous case of Copilot code review:
+>   ["Copilot's reviews do not count toward required approvals for the pull
+>   request, and Copilot's reviews will not block merging changes"](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
+> - A PR author also can't approve their own PR.
+>
+> A GitHub App installation token acts as a **distinct identity**, so its
+> approval *does* count toward required reviews. That's why this action expects
+> one.
 
 ## How it works
 
@@ -105,8 +130,11 @@ rule, **all conditions under `when` must hold** (AND).
 
 ```yaml
 target_paths:
-  - terraform/**
-  - docs/**
+  include:
+    - terraform/**
+    - docs/**
+  exclude:
+    - terraform/prod/**
 
 rules:
   - name: no-changes
@@ -121,9 +149,16 @@ rules:
 
 ### `target_paths` (scope check)
 
-A list of files/directories the PR is allowed to touch. Every changed file
-(including the *previous* path of a rename) must be covered by at least one
-entry, otherwise the action skips approval **before** looking at any plan.
+Declares which files the PR is allowed to touch:
+
+| Key       | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `include` | Paths that are in scope.                                            |
+| `exclude` | Paths carved back out of `include`. **Takes precedence over it.**   |
+
+A file is in scope when it matches `include` and does **not** match `exclude`.
+Every changed file (including the *previous* path of a rename) must be in scope,
+otherwise the action skips approval **before** looking at any plan.
 
 | Pattern form   | Matches                                                          |
 | -------------- | ---------------------------------------------------------------- |
@@ -132,15 +167,34 @@ entry, otherwise the action skips approval **before** looking at any plan.
 | `**/*.md`      | any `.md` file at any depth                                      |
 
 Patterns are [minimatch](https://github.com/isaacs/minimatch) globs with
-`dot: true`, so `.github/**` matches dot directories.
+`dot: true`, so `.github/**` matches dot directories. The bare-path form
+(`docs` covering `docs/**`) is a convenience of this action, not standard glob
+behaviour.
 
-`target_paths` is an **allow-list**, so negation is not supported: a pattern
-starting with `!` is rejected by config validation. To narrow the scope, list
-the paths you do allow rather than the ones you want to exclude.
+> [!TIP]
+> Matching on `**/*.tf` alone is usually too narrow: `terraform.tfvars`,
+> `.terraform.lock.hcl` and `*.tf.json` fall out of scope, so provider version
+> bumps stop being auto-approved. Prefer a directory pattern like `terraform/**`.
 
-> `target_paths` is optional. Omitting it disables the scope check — the action
-> logs a warning, and a PR mixing terraform with unrelated changes can be
-> approved. Set it on any monorepo.
+#### Why `exclude` instead of `!` patterns
+
+A pattern starting with `!` is **rejected by config validation** in both lists.
+`exclude` is a separate deny-list rather than a negation mixed into one list,
+which makes the check order-independent and **monotonic**: adding an `exclude`
+entry can only ever narrow the scope. A `!` in a flat list has neither property
+— a single `!app/**` would match nearly every file and silently disable the
+gate, and the gate failing *open* means approving without review.
+
+> [!IMPORTANT]
+> `exclude` without `include` puts **nothing** in scope — it is not read as
+> "everything except these". Such a config is valid but can never approve
+> anything; the action logs a warning. This is deliberate: an incomplete scope
+> declaration must block approval, never grant it.
+
+> `target_paths` itself is optional. Omitting it disables the scope check
+> entirely — the action logs a warning, and a PR mixing terraform with unrelated
+> changes can be approved. Set it on any monorepo. Note this is the opposite of
+> an empty `include`, where nothing is in scope.
 
 ### Conditions
 
@@ -192,8 +246,9 @@ Put the docs paths in `target_paths` and set `allow-empty-plans: true`:
 ```yaml
 # .github/tf-pr-approver.yml
 target_paths:
-  - terraform/**
-  - docs/**
+  include:
+    - terraform/**
+    - docs/**
 rules:
   - name: no-changes
     when:

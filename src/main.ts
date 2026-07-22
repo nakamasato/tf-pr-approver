@@ -81,14 +81,24 @@ export async function run(): Promise<void> {
     let pathCheck: PathCheckResult | null = null
     if (config.target_paths) {
       const changedFiles = await listChangedFiles({ octokit, owner, repo, pullNumber })
+      const { include = [], exclude = [] } = config.target_paths
       pathCheck = checkChangedFiles(changedFiles, config.target_paths)
       core.info(
         `Scope check: ${changedFiles.length} changed file(s) against ` +
-          `${config.target_paths.length} target path(s) — ` +
+          `${include.length} include / ${exclude.length} exclude pattern(s) — ` +
           (pathCheck.matched
             ? 'all in scope.'
             : `${pathCheck.outOfScopeFiles.length} out of scope.`)
       )
+      // Nothing can ever be in scope, so the gate can only skip. Cheap to
+      // misconfigure (an `exclude` written without an `include`), and the
+      // symptom otherwise looks like a normal skip.
+      if (include.length === 0) {
+        core.warning(
+          '"target_paths" declares no "include" patterns: no file is in scope, so this PR ' +
+            'can never be approved. Add the paths you want to allow.'
+        )
+      }
       for (const f of pathCheck.outOfScopeFiles) {
         core.info(`  out of scope: ${f}`)
       }

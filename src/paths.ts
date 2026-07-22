@@ -10,6 +10,17 @@
  */
 import { minimatch } from 'minimatch'
 
+/**
+ * The declared scope. `exclude` wins over `include`, which makes the check
+ * order-independent and monotonic: adding an `exclude` entry can only ever
+ * narrow the scope, never widen it. That is the opposite of a `!` pattern mixed
+ * into a flat list, where a single entry can silently match almost everything.
+ */
+export interface TargetPaths {
+  include?: string[]
+  exclude?: string[]
+}
+
 export interface PathCheckResult {
   /** True when every changed file is covered by at least one target path. */
   matched: boolean
@@ -43,17 +54,32 @@ function expandPattern(pattern: string): string[] {
 }
 
 /** True when `file` is covered by at least one of `patterns`. */
-export function isTargetPath(file: string, patterns: string[]): boolean {
+function matchesAny(file: string, patterns: string[]): boolean {
   return patterns
     .flatMap(expandPattern)
     .some((pattern) => minimatch(file, pattern, MINIMATCH_OPTIONS))
 }
 
 /**
+ * True when `file` is in scope: covered by `include` and not by `exclude`.
+ *
+ * Both lists default to empty, so a config carrying only `exclude` puts *no*
+ * file in scope rather than every file — an incomplete scope declaration must
+ * block approval, not grant it.
+ */
+export function isTargetPath(file: string, targets: TargetPaths): boolean {
+  const { include = [], exclude = [] } = targets
+  if (matchesAny(file, exclude)) {
+    return false
+  }
+  return matchesAny(file, include)
+}
+
+/**
  * Check the PR's changed files against the configured target paths.
  * Order of `outOfScopeFiles` follows the input order so reports stay stable.
  */
-export function checkChangedFiles(files: string[], patterns: string[]): PathCheckResult {
-  const outOfScopeFiles = files.filter((f) => !isTargetPath(f, patterns))
+export function checkChangedFiles(files: string[], targets: TargetPaths): PathCheckResult {
+  const outOfScopeFiles = files.filter((f) => !isTargetPath(f, targets))
   return { matched: outOfScopeFiles.length === 0, outOfScopeFiles }
 }
