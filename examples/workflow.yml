@@ -27,12 +27,11 @@ jobs:
           terraform plan -input=false -out=tfplan
           terraform show -json tfplan > tfplan.json
 
-      # Mint a GitHub App installation token. An approval by github-actions[bot]
-      # (the default GITHUB_TOKEN) is blocked unless "Allow GitHub Actions to
-      # create and approve pull requests" is enabled, and even then it is not
-      # honoured as an approving review by branch protection / rulesets. A
-      # distinct App identity is required for the approval to count toward
-      # required reviews. See the README for details.
+      # Mint a GitHub App installation token. The default GITHUB_TOKEN also
+      # works if "Allow GitHub Actions to create and approve pull requests" is
+      # enabled at the org and repo level, but that switch lets every workflow
+      # in the repository approve. An App token keeps the ability to approve
+      # with the jobs that can read its private key. See the README.
       #
       # The variable/secret names below are just examples — use whatever names
       # you already have. This action never reads them: it only takes the

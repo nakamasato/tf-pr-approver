@@ -1,8 +1,8 @@
 # tf-pr-approver
 
 A GitHub Action that **auto-approves Terraform pull requests** when the
-`terraform plan` result matches declarative safety rules — using a **GitHub App
-identity** so the approval counts toward your branch's required reviews.
+`terraform plan` result matches declarative safety rules, so the approval counts
+toward your branch's required reviews.
 
 > [!NOTE]
 > **This project is in alpha.** Inputs, outputs and the config schema may change
@@ -25,26 +25,27 @@ it's safe, approves the PR as a bot — so humans only review the changes that
 matter, without weakening the required-review rule.
 
 > [!IMPORTANT]
-> **Why a GitHub App, and not the default `GITHUB_TOKEN`?**
+> **Which identity should the approval come from?**
 >
-> - Approving with `GITHUB_TOKEN` is blocked outright unless
+> Both of the options below produce an approval that counts toward required
+> reviews. They differ in how widely you hand out the right to approve.
+>
+> - **The default `GITHUB_TOKEN`.** Approving is blocked unless
 >   [*Allow GitHub Actions to create and approve pull requests*](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests)
->   is enabled at both the org and repo level. It is off by default, and many
->   orgs deliberately keep it off.
-> - Even with that setting on, an approval by `github-actions[bot]` is not
->   honoured as an approving review by branch protection / rulesets — by design,
->   so a workflow cannot approve its own changes. It shows up in the UI but the
->   required-approvals count does not move
->   ([community discussion #181487](https://github.com/orgs/community/discussions/181487)).
->   GitHub does not document this for `github-actions[bot]` directly, but it does
->   state the same behaviour for the analogous case of Copilot code review:
->   ["Copilot's reviews do not count toward required approvals for the pull
->   request, and Copilot's reviews will not block merging changes"](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
-> - A PR author also can't approve their own PR.
+>   is enabled at both the org and repo level; it is off by default. Once it is
+>   on, the switch applies repo-wide — **every** workflow in the repo can
+>   approve, including one added by the pull request under review, since a PR
+>   from a branch of the same repo gets a write-scoped token.
+> - **A GitHub App installation token.** A distinct identity whose credentials
+>   live in a secret, so the ability to approve reaches only the jobs that can
+>   read that secret (and can be narrowed further with
+>   [environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)).
+>   The cost is creating the App and rotating its private key.
 >
-> A GitHub App installation token acts as a **distinct identity**, so its
-> approval *does* count toward required reviews. That's why this action expects
-> one.
+> Neither identity can approve a pull request it opened itself. If a bot raises
+> the PRs you want auto-approved, the approving identity has to be a different
+> one — `github-actions[bot]` cannot approve a PR that `github-actions[bot]`
+> created.
 
 ## How it works
 
@@ -62,14 +63,15 @@ The scope check runs **first and short-circuits**. A PR that also changes
 application code, CI workflows or anything else outside `target_paths` is never
 auto-approved, however safe its terraform plan looks.
 
-The action does **not** run `terraform` and does **not** authenticate the App
-itself. Your workflow produces the plan JSON and mints the token (via
-[`actions/create-github-app-token`](https://github.com/actions/create-github-app-token));
-this action focuses on evaluation + approval.
+The action does **not** run `terraform` and does **not** obtain a token itself.
+Your workflow produces the plan JSON and supplies the token; this action focuses
+on evaluation + approval.
 
 ## Usage
 
 See [`examples/workflow.yml`](examples/workflow.yml) for a complete workflow.
+
+With the default `GITHUB_TOKEN`:
 
 ```yaml
 permissions:
@@ -79,6 +81,17 @@ permissions:
 steps:
   # ... produce tfplan.json with `terraform show -json` ...
 
+  - uses: nakamasato/tf-pr-approver@v1
+    with:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      plan-files: '**/tfplan.json'
+      config: .github/tf-pr-approver.yml
+```
+
+With a GitHub App token — swap the `github-token` value for one you mint in the
+workflow:
+
+```yaml
   # Variable/secret names here are examples — use whatever you already have.
   - uses: actions/create-github-app-token@v1
     id: app-token
@@ -89,9 +102,15 @@ steps:
   - uses: nakamasato/tf-pr-approver@v1
     with:
       github-token: ${{ steps.app-token.outputs.token }}
-      plan-files: '**/tfplan.json'
-      config: .github/tf-pr-approver.yml
+      # ... same as above ...
 ```
+
+### Enabling the default `GITHUB_TOKEN` to approve
+
+Turn on *Allow GitHub Actions to create and approve pull requests* under
+**Settings → Actions → General**, at both the organization and the repository
+level. Read the trade-off in [Why](#why) before you do: it lets every workflow
+in the repository approve pull requests, not just this one.
 
 ### GitHub App setup
 
@@ -105,7 +124,7 @@ steps:
 
 | Input                 | Required | Default                         | Description                                                                                         |
 | --------------------- | -------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `github-token`        | yes      | —                               | GitHub App installation token with `pull-requests: write`. **Not** the default `GITHUB_TOKEN`.      |
+| `github-token`        | yes      | —                               | Token with `pull-requests: write`. The default `GITHUB_TOKEN` or a GitHub App installation token — see [Why](#why). |
 | `plan-files`          | yes      | —                               | Glob pattern(s) or newline-separated paths to the plan JSON files. Every matched plan must be safe. |
 | `config`              | no       | `.github/tf-pr-approver.yml`  | Path to the rules config.                                                                            |
 | `allow-empty-plans`   | no       | `false`                         | Treat "no plan file matched" as OK instead of failing (needed for docs-only PRs).                    |
