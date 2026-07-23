@@ -124,12 +124,16 @@ default.
 
 Each newline-separated line is either a bare glob (as today) or `name=glob`.
 
-- The name is the text before the **first** `=`, so a `=` inside the path is
-  harmless.
-- Names must match `^[A-Za-z0-9._-]+$`. Glob metacharacters in a name would make
-  config-side matching ambiguous in two directions at once.
+- A line is a binding when the text before its **first** `=` contains no `/`.
+  A name can never contain `/`, so a pre-existing bare glob such as
+  `plans/a=b/tfplan.json` keeps working.
+- That text is then the name, and must match `^[A-Za-z0-9._-]+$` — anything else
+  is an error rather than a silent fallback to "bare glob". Glob metacharacters
+  in a name would make config-side matching ambiguous in two directions at once.
 - A named glob matching more than one file is an **error**: two plans sharing one
   name cannot be told apart in the outputs or the summary.
+- A named glob matching **no** file is normal, not an error — that stack simply
+  was not planned in this PR.
 - The same name on two lines is an **error**.
 - Plans from bare-glob lines are unnamed and always resolve to the default
   bucket.
