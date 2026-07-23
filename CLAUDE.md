@@ -3,7 +3,10 @@
 A GitHub Action that evaluates Terraform plan JSON against declarative rules and
 auto-approves safe PRs using a caller-supplied token (TypeScript / Node 24).
 
-User-facing specs (inputs, outputs, config reference) live in [README.md](README.md).
+User-facing specs live in [README.md](README.md) (inputs, outputs, quick start)
+and [docs/](docs/) — [authentication](docs/authentication.md),
+[configuration](docs/configuration.md), [monorepo](docs/monorepo.md),
+[development](docs/development.md). Keep those in sync when behavior changes.
 This file only covers what is easy to break.
 
 ## Language

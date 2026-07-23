@@ -31,7 +31,7 @@ jobs:
       # works if "Allow GitHub Actions to create and approve pull requests" is
       # enabled at the org and repo level, but that switch lets every workflow
       # in the repository approve. An App token keeps the ability to approve
-      # with the jobs that can read its private key. See the README.
+      # with the jobs that can read its private key. See docs/authentication.md.
       #
       # The variable/secret names below are just examples — use whatever names
       # you already have. This action never reads them: it only takes the

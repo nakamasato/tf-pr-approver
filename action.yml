@@ -13,8 +13,8 @@ inputs:
       Token with `pull-requests: write`. Either the default GITHUB_TOKEN (needs
       "Allow GitHub Actions to create and approve pull requests" enabled at the
       org and repo level) or a GitHub App installation token minted in your
-      workflow with actions/create-github-app-token. See the README for the
-      trade-off between the two.
+      workflow with actions/create-github-app-token. See docs/authentication.md
+      for the trade-off between the two.
     required: true
   plan-files:
     description: >-
