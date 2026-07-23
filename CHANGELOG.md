@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/nakamasato/tf-pr-approver/compare/v1.0.0...v1.0.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* bump action runtime from node20 to node24 ([#5](https://github.com/nakamasato/tf-pr-approver/issues/5)) ([d81e9fb](https://github.com/nakamasato/tf-pr-approver/commit/d81e9fb4effbef289e3df2b78ad87a0e6417718f))
+
 ## [1.0.0](https://github.com/nakamasato/tf-pr-approver/compare/v0.1.0...v1.0.0) (2026-07-22)
 
 
