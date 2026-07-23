@@ -1,10 +1,15 @@
 # tf-pr-approver
 
-Terraform plan JSON を宣言的ルールで評価し、安全な PR を GitHub App の ID で
-auto-approve する GitHub Action (TypeScript / Node 24)。
+A GitHub Action that evaluates Terraform plan JSON against declarative rules and
+auto-approves safe PRs using a GitHub App identity (TypeScript / Node 24).
 
-利用者向けの仕様（inputs・outputs・config リファレンス）は [README.md](README.md) を参照。
-ここには「触るときに壊しやすいこと」だけを書く。
+User-facing specs (inputs, outputs, config reference) live in [README.md](README.md).
+This file only covers what is easy to break.
+
+## Language
+
+**Write everything in English**: code comments, doc comments, documentation,
+commit messages, PR titles and bodies, review comments, and issue text.
 
 ## Commands
 
@@ -12,52 +17,58 @@ auto-approve する GitHub Action (TypeScript / Node 24)。
 npm ci
 npm test              # vitest
 npm run lint          # eslint
-npm run format        # prettier （format:check が CI にあるので commit 前に実行）
-npm run build         # tsc 型チェック
-npm run package       # esbuild → dist/index.js  ← src/ を変えたら必須
+npm run format        # prettier (CI runs format:check, so run this before committing)
+npm run build         # tsc type check
+npm run package       # esbuild → dist/index.js  ← required whenever src/ changes
 npm run all           # build + test + package
 ```
 
-## ⚠️ dist/ はコミットする
+## ⚠️ dist/ is committed
 
-Action の実行実体は `dist/index.js`。`src/` を変更したら **必ず** `npm run package`
-を実行して `dist/` も一緒に commit する。忘れると `check-dist` ワークフローが
-差分を検出して CI が落ち、かつ古い挙動が黙って出荷される。
+The Action actually runs `dist/index.js`. Whenever you change `src/`, you **must**
+run `npm run package` and commit `dist/` along with it. Forgetting it fails the
+`check-dist` workflow and silently ships stale behavior.
 
-## PR / コミット規約
+## PR / commit convention
 
-- **PR タイトルは必ず [Conventional Commits](https://www.conventionalcommits.org/) 形式**
-  （`feat:` / `fix:` / `chore:` / `ci:` / `docs:` ...）。
-  squash merge されたタイトルが release-please のリリース判定に使われるため、
-  形式を外すとリリースが正しく作られない。`pr-title` ワークフローが CI でチェックする。
-- `fix:` → patch / `feat:` → minor / `feat!:` または `BREAKING CHANGE:` → major
+- **PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/)**
+  (`feat:` / `fix:` / `chore:` / `ci:` / `docs:` ...). PRs are squash-merged, so the
+  title becomes the commit message on main and is what release-please reads to pick
+  the next version — a malformed title silently produces no release. The `pr-title`
+  workflow checks this in CI.
+- `fix:` → patch / `feat:` → minor / `feat!:` or `BREAKING CHANGE:` → major
 
 ## Architecture
 
-`src/index.ts` → `src/main.ts` の `run()` が全体をオーケストレーションする
-（`index.ts` を薄く保っているのはテストが `run()` を直接叩けるようにするため）。
+`src/index.ts` → `run()` in `src/main.ts` orchestrates everything (`index.ts` stays
+thin so tests can drive `run()` directly).
 
-1. `config.ts` — YAML 読込 + zod 検証
-2. `changed-files.ts` + `paths.ts` — **scope gate**（ここで短絡する）
-3. `plan.ts` — plan JSON パース
-4. `evaluate.ts` — ルール評価（ルール間は OR、`when` 内は AND）
-5. `approve.ts` — approve（head SHA が既に APPROVED なら冪等スキップ）
-6. `summary.ts` — Job Summary 出力
+1. `config.ts` — load YAML + validate with zod
+2. `changed-files.ts` + `paths.ts` — **scope gate** (short-circuits here)
+3. `plan.ts` — parse plan JSON
+4. `evaluate.ts` — rule evaluation (rules are OR'd, conditions within `when` are AND'd)
+5. `approve.ts` — approve (idempotent: skips if the head SHA is already APPROVED)
+6. `summary.ts` — write the job summary
 
-`evaluate.ts` と `paths.ts` は I/O・副作用なしの純粋ロジックに保つ。
+Keep `evaluate.ts` and `paths.ts` free of I/O and side effects.
 
-## Fail-closed の不変条件（バグに見えるが意図的）
+## Fail-closed invariants (they look like bugs, but they are deliberate)
 
-セキュリティゲートなので、迷ったら「承認しない」側に倒す。以下を「修正」しないこと。
+This is a security gate, so when in doubt it must fall back to "do not approve".
+Do not "fix" the following.
 
-- `target_paths` に `exclude` だけ書くと**何もスコープ内にならない**（＝何も承認されない）
-- `target_paths` の省略は「ゲート無効（全ファイル in scope）」で、空の `include` とは別物
-- `allow-empty-plans: true` + `target_paths` なし は**エラーで拒否**（任意の PR を無条件承認してしまうため）
-- `!` 始まりのパターンは zod と minimatch の `nonegate: true` で二重に拒否する
-- 変更ファイル数が GitHub の 3000 件上限に達したら throw（リスト切り捨てで scope check が信頼できない）
-- rename は新旧の両パスを scope 対象に含める
+- `target_paths` with only `exclude` puts **nothing** in scope (so nothing is approved)
+- Omitting `target_paths` disables the gate entirely (every file is in scope), which is
+  not the same as an empty `include`
+- `allow-empty-plans: true` without `target_paths` is **rejected with an error** (the
+  combination would approve any PR unconditionally)
+- Patterns starting with `!` are rejected twice over: by the zod schema and by
+  minimatch's `nonegate: true`
+- Throw when the changed-file count reaches GitHub's 3000-file limit (a truncated list
+  makes the scope check untrustworthy)
+- Renames put both the old and the new path in scope
 
-## エラーポリシー
+## Error policy
 
-- 「条件を満たさない」＝ 正常な **skip**（`core.info` + `approved=false`）
-- 設定・入力・plan JSON の不正 ＝ **失敗**（`core.setFailed`）
+- "conditions not met" → a normal **skip** (`core.info` + `approved=false`)
+- malformed config, input, or plan JSON → **failure** (`core.setFailed`)
