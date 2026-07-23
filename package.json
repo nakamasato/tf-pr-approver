@@ -1,6 +1,6 @@
 {
   "name": "tf-pr-approver",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Auto-approve Terraform PRs based on declarative rules evaluated against the terraform plan JSON, using a GitHub App identity.",
   "main": "lib/index.js",
   "scripts": {
