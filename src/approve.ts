@@ -1,7 +1,7 @@
 /**
- * Submits an approving review on the pull request, using the provided
- * (GitHub App) token. Idempotent: skips if the current head commit already
- * has an APPROVED review.
+ * Submits an approving review on the pull request, using the caller-supplied
+ * token. Idempotent: skips if the current head commit already has an APPROVED
+ * review.
  */
 import * as core from '@actions/core'
 import * as github from '@actions/github'

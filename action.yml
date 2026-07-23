@@ -1,8 +1,7 @@
 name: 'Terraform Auto Approver'
 description: >-
   Auto-approve Terraform pull requests when the terraform plan JSON matches
-  declarative safety rules, using a GitHub App identity so the approval counts
-  toward required reviews.
+  declarative safety rules, so the approval counts toward required reviews.
 author: 'Masato Naka'
 branding:
   icon: 'check-circle'
@@ -11,9 +10,11 @@ branding:
 inputs:
   github-token:
     description: >-
-      GitHub App installation token with `pull-requests: write`. Generate it in
-      your workflow with actions/create-github-app-token and pass its output here.
-      Do NOT use the default GITHUB_TOKEN: github-actions[bot] cannot approve PRs.
+      Token with `pull-requests: write`. Either the default GITHUB_TOKEN (needs
+      "Allow GitHub Actions to create and approve pull requests" enabled at the
+      org and repo level) or a GitHub App installation token minted in your
+      workflow with actions/create-github-app-token. See docs/authentication.md
+      for the trade-off between the two.
     required: true
   plan-files:
     description: >-
