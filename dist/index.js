@@ -34102,9 +34102,9 @@ async function writeSummary(input) {
           { data: "Matched rule", header: true }
         ],
         ...results.map((r) => [
-          r.file,
-          r.name ?? "-",
-          r.ruleSet,
+          escapeHtml(r.file),
+          r.name !== null ? escapeHtml(r.name) : "-",
+          escapeHtml(r.ruleSet),
           r.evaluation.matched ? "\u2705 matched" : "\u274C no match",
           r.evaluation.matchedRule ?? "-"
         ])
@@ -34181,8 +34181,12 @@ async function resolvePlanFiles(entries) {
         byFile.set(file, { file, name: entry.name });
         continue;
       }
-      if (existing.name === null && entry.name !== null) {
+      if (existing.name === null) {
         existing.name = entry.name;
+      } else if (entry.name !== null && entry.name !== existing.name) {
+        throw new Error(
+          `plan file "${file}" is bound to two names ("${existing.name}" and "${entry.name}"); a plan file must have exactly one name`
+        );
       }
     }
   }

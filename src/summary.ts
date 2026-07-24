@@ -87,9 +87,9 @@ export async function writeSummary(input: SummaryInput): Promise<void> {
           { data: 'Matched rule', header: true },
         ],
         ...results.map((r) => [
-          r.file,
-          r.name ?? '-',
-          r.ruleSet,
+          escapeHtml(r.file),
+          r.name !== null ? escapeHtml(r.name) : '-',
+          escapeHtml(r.ruleSet),
           r.evaluation.matched ? '✅ matched' : '❌ no match',
           r.evaluation.matchedRule ?? '-',
         ]),

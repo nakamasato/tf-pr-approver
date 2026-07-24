@@ -56,6 +56,11 @@ through:
       api-prod=tfplans/${{ needs.api-prod.outputs.tfplan_artifact_name }}/tfplan.json
 ```
 
+Excluding the workflow files from `target_paths` is **required** when using
+`tfplan_rule_map`: plan names come from the workflow, and under `pull_request`
+the head branch's workflow is what runs, so without that exclusion a PR could
+rename a production artifact into a permissive rule set.
+
 ```yaml
 # .github/tf-pr-approver.yml
 target_paths:

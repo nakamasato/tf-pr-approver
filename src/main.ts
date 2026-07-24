@@ -63,11 +63,19 @@ async function resolvePlanFiles(entries: PlanFileEntry[]): Promise<ResolvedPlanF
         byFile.set(file, { file, name: entry.name })
         continue
       }
-      // A file reachable from both a named and a bare entry keeps the name:
-      // the named entry is the more specific statement of intent, and the
-      // result must not depend on which line happens to come first.
-      if (existing.name === null && entry.name !== null) {
+      if (existing.name === null) {
+        // A file reachable from both a bare glob and a named entry keeps the
+        // name: the named entry is the more specific statement of intent.
         existing.name = entry.name
+      } else if (entry.name !== null && entry.name !== existing.name) {
+        // Two DIFFERENT names resolving to the same file is not a case where
+        // either name can be silently preferred: the outputs and summary key
+        // per-plan results by name, and a permissive rule set bound to one
+        // name must never leak onto a file also bound to a stricter name.
+        throw new Error(
+          `plan file "${file}" is bound to two names ("${existing.name}" and "${entry.name}"); ` +
+            'a plan file must have exactly one name'
+        )
       }
     }
   }

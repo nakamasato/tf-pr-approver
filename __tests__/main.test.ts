@@ -377,6 +377,25 @@ tfplan_rule_map:
     expect(approvePullRequest).not.toHaveBeenCalled()
   })
 
+  it('fails when two different names both resolve to the same single file', async () => {
+    // Two `name=glob` entries can legitimately collide on one file (e.g. two
+    // patterns that both happen to match the same artifact). If the names
+    // differ, silently keeping whichever appears first would let a
+    // permissive rule set bound to one name leak onto a file also bound to
+    // a stricter name — exactly what this feature exists to prevent.
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    const shared = path.join(tmpDir, 'shared.json')
+    fs.copyFileSync(path.join(FIXTURES, 'no-changes.json'), shared)
+    planFilesByPattern['plans/sandbox.json'] = [shared]
+    planFilesByPattern['plans/prod.json'] = [shared]
+    inputs['plan-files'] = 'sandbox=plans/sandbox.json\nprod=plans/prod.json'
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('bound to two names'))
+    expect(approvePullRequest).not.toHaveBeenCalled()
+  })
+
   it('treats a named entry matching no file as a stack that was not planned', async () => {
     // The normal monorepo case: only the stacks a PR touches produce artifacts.
     writeConfig('target_paths:\n  include:\n    - terraform/**\n')
