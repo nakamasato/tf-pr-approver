@@ -30,6 +30,7 @@ let tmpDir: string
 let configPath: string
 let inputs: Record<string, string>
 let planFiles: string[]
+let planFilesByPattern: Record<string, string[]>
 
 function writeConfig(yaml: string): void {
   fs.writeFileSync(configPath, yaml, 'utf8')
@@ -62,14 +63,18 @@ rules:
     'allow-empty-plans': 'false',
   }
   planFiles = []
+  planFilesByPattern = {}
 
   vi.mocked(core.getInput).mockImplementation((name: string) => inputs[name] ?? '')
   vi.mocked(core.getBooleanInput).mockImplementation(
     (name: string) => (inputs[name] ?? 'false') === 'true'
   )
-  vi.mocked(glob.create).mockImplementation(
-    async () => ({ glob: async () => planFiles }) as unknown as glob.Globber
-  )
+  vi.mocked(glob.create).mockImplementation(async (pattern: string) => {
+    // Tests that set a single-line `plan-files` keep using `planFiles`; tests
+    // with several entries look each pattern up in `planFilesByPattern`.
+    const files = pattern === inputs['plan-files'] ? planFiles : (planFilesByPattern[pattern] ?? [])
+    return { glob: async () => files } as unknown as glob.Globber
+  })
   vi.mocked(github.getOctokit).mockReturnValue({
     rest: { pulls: { get: async () => ({ data: { head: { sha: 'deadbeef' } } }) } },
   } as unknown as ReturnType<typeof github.getOctokit>)
@@ -130,6 +135,7 @@ describe('run: scope gate', () => {
     expect(outputs()).toEqual({
       approved: 'false',
       'matched-rules': '{}',
+      'plan-results': '[]',
       'out-of-scope-files': JSON.stringify(['app/main.go']),
     })
   })
@@ -146,6 +152,9 @@ describe('run: scope gate', () => {
       approved: 'true',
       'matched-rules': JSON.stringify({ [planFiles[0]]: 'no changes' }),
       'out-of-scope-files': '[]',
+      'plan-results': JSON.stringify([
+        { file: planFiles[0], name: null, ruleSet: 'rules', rule: 'no changes', matched: true },
+      ]),
     })
   })
 
@@ -266,5 +275,149 @@ describe('run: pull request number', () => {
     await run()
 
     expect(approvePullRequest).toHaveBeenCalledWith(expect.objectContaining({ pullNumber: 42 }))
+  })
+})
+
+describe('run: per-plan rule sets', () => {
+  /**
+   * Point a named entry at a fixture plan. Copies the fixture into `tmpDir`
+   * under a name-specific filename so two entries sharing the same fixture
+   * content (e.g. two stacks that both plan a delete) still resolve to
+   * distinct file paths, the way two real stacks' plan artifacts would.
+   */
+  function namePlan(name: string, fixture: string): string {
+    const pattern = `plans/${name}.json`
+    const dest = path.join(tmpDir, `${name}.json`)
+    fs.copyFileSync(path.join(FIXTURES, fixture), dest)
+    planFilesByPattern[pattern] = [dest]
+    return `${name}=${pattern}`
+  }
+
+  it('applies a different rule set per plan name', async () => {
+    writeConfig(`
+target_paths:
+  include:
+    - terraform/**
+tfplan_rule_map:
+  sandbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+  default:
+    - name: no-changes
+      when:
+        no_changes: true
+`)
+    inputs['plan-files'] = [
+      namePlan('sandbox', 'with-delete.json'),
+      namePlan('prod', 'no-changes.json'),
+    ].join('\n')
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('true')
+    const results = JSON.parse(outputs()['plan-results']) as Array<Record<string, unknown>>
+    expect(results.map((r) => [r.name, r.ruleSet, r.rule])).toEqual([
+      ['sandbox', 'sandbox', 'anything'],
+      ['prod', 'default', 'no-changes'],
+    ])
+  })
+
+  it('does not let a permissive rule set leak onto another plan', async () => {
+    writeConfig(`
+target_paths:
+  include:
+    - terraform/**
+tfplan_rule_map:
+  sandbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+  default:
+    - name: no-changes
+      when:
+        no_changes: true
+`)
+    inputs['plan-files'] = [
+      namePlan('sandbox', 'with-delete.json'),
+      namePlan('prod', 'with-delete.json'),
+    ].join('\n')
+
+    await run()
+
+    expect(approvePullRequest).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('false')
+  })
+
+  it('evaluates an unnamed plan against the built-in default', async () => {
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    inputs['plan-files'] = 'plans/*.json'
+    planFiles = [path.join(FIXTURES, 'no-changes.json')]
+
+    await run()
+
+    expect(outputs().approved).toBe('true')
+    const results = JSON.parse(outputs()['plan-results']) as Array<Record<string, unknown>>
+    expect(results[0].name).toBeNull()
+    expect(results[0].ruleSet).toBe('built-in default')
+  })
+
+  it('fails when a named entry matches more than one file', async () => {
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    inputs['plan-files'] = 'sandbox=plans/*.json'
+    planFilesByPattern['plans/*.json'] = [
+      path.join(FIXTURES, 'no-changes.json'),
+      path.join(FIXTURES, 'update-only.json'),
+    ]
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(expect.stringContaining('matched 2 files'))
+    expect(approvePullRequest).not.toHaveBeenCalled()
+  })
+
+  it('treats a named entry matching no file as a stack that was not planned', async () => {
+    // The normal monorepo case: only the stacks a PR touches produce artifacts.
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    inputs['plan-files'] = ['absent=plans/absent.json', namePlan('prod', 'no-changes.json')].join(
+      '\n'
+    )
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('true')
+    expect(JSON.parse(outputs()['plan-results'])).toHaveLength(1)
+  })
+
+  it('warns about a rule map key that selected no plan', async () => {
+    writeConfig(`
+target_paths:
+  include:
+    - terraform/**
+tfplan_rule_map:
+  sandbbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+  default:
+    - name: no-changes
+      when:
+        no_changes: true
+`)
+    inputs['plan-files'] = namePlan('sandbox', 'no-changes.json')
+
+    await run()
+
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('"sandbbox" matched no plan'))
+  })
+
+  it('reports plan-results as empty when the scope check short-circuits', async () => {
+    vi.mocked(listChangedFiles).mockResolvedValue(['app/main.go'])
+
+    await run()
+
+    expect(outputs()['plan-results']).toBe('[]')
   })
 })

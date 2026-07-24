@@ -8,6 +8,10 @@ import { PathCheckResult } from './paths'
 
 export interface PlanResult {
   file: string
+  /** null when the plan came from a bare glob rather than a `name=glob` entry. */
+  name: string | null
+  /** Which `tfplan_rule_map` bucket was applied; see `rule-map.ts`. */
+  ruleSet: string
   evaluation: PlanEvaluation
 }
 
