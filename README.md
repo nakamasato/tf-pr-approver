@@ -75,7 +75,7 @@ config.
 | Input                 | Required | Default                         | Description                                                                                         |
 | --------------------- | -------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `github-token`        | yes      | —                               | Token with `pull-requests: write`. The default `GITHUB_TOKEN` or a GitHub App installation token — see [docs/authentication.md](docs/authentication.md). |
-| `plan-files`          | yes      | —                               | Glob pattern(s) or newline-separated paths to the plan JSON files. Every matched plan must be safe. |
+| `plan-files`          | yes      | —                               | Glob pattern(s) or newline-separated paths to the plan JSON files, optionally as `name=glob` to bind a name for `tfplan_rule_map`. Every matched plan must be safe. |
 | `config`              | no       | `.github/tf-pr-approver.yml`  | Path to the rules config.                                                                            |
 | `allow-empty-plans`   | no       | `false`                         | Treat "no plan file matched" as OK instead of failing (needed for docs-only PRs).                    |
 | `pull-request-number` | no       | (from event)                    | PR number to approve. Defaults to the PR in the event context.                                      |
@@ -88,6 +88,7 @@ config.
 | `approved`           | `"true"` if the PR was approved (or already approved), else `"false"`.          |
 | `matched-rules`      | JSON object mapping each plan file to the rule it matched (or `null`).          |
 | `out-of-scope-files` | JSON array of changed files outside `target_paths` (empty when the check passed). |
+| `plan-results`   | JSON array of per-plan results: file, name, rule set, matched rule. |
 
 ## Configuration
 

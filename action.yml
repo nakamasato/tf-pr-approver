@@ -20,7 +20,10 @@ inputs:
     description: >-
       Glob pattern(s) or newline-separated paths to the terraform plan JSON
       file(s) to evaluate (produced by `terraform show -json <planfile>`).
-      Every matched plan must satisfy at least one rule for the PR to be approved.
+      A line may also take the `name=glob` form, which binds a name to that
+      plan so `tfplan_rule_map` in the config can apply a rule set to it.
+      Every matched plan must satisfy at least one rule for the PR to be
+      approved.
     required: true
   config:
     description: 'Path to the rules config YAML.'
@@ -51,6 +54,11 @@ outputs:
     description: 'JSON object mapping each evaluated plan file to the rule name it matched (or null).'
   out-of-scope-files:
     description: 'JSON array of changed files outside `target_paths` (empty when the scope check passed).'
+  plan-results:
+    description: >-
+      JSON array of per-plan results: `file`, `name` (null when unnamed),
+      `ruleSet` (the `tfplan_rule_map` bucket applied), `rule` (the rule that
+      matched, or null) and `matched`.
 
 runs:
   using: 'node24'
