@@ -33777,6 +33777,7 @@ var TargetPathsSchema = external_exports.object({
 }).strict().refine((obj) => obj.include !== void 0 || obj.exclude !== void 0, {
   message: '"target_paths" must specify "include" and/or "exclude"'
 });
+var RuleListSchema = external_exports.array(RuleSchema).nonempty();
 var ConfigSchema = external_exports.object({
   /**
    * Scope gate. A PR changing anything outside it is skipped before the plan
@@ -33785,8 +33786,36 @@ var ConfigSchema = external_exports.object({
    * `include`, where nothing is in scope and nothing is ever approved.
    */
   target_paths: TargetPathsSchema.optional(),
-  rules: external_exports.array(RuleSchema).nonempty()
-}).strict();
+  /**
+   * Rules for plans that no `tfplan_rule_map` key selects. The same bucket as
+   * `tfplan_rule_map.default`, kept as-is for configs written before the map
+   * existed. Omitting both falls back to the built-in `no_changes` rule
+   * (see `rule-map.ts`), so an incomplete config is strict, not permissive.
+   */
+  rules: RuleListSchema.optional(),
+  /**
+   * Plan name — or a glob over plan names — to the rules that plan must
+   * satisfy. Names come from the `name=glob` form of the `plan-files` input.
+   */
+  tfplan_rule_map: external_exports.record(external_exports.string().min(1), RuleListSchema).optional()
+}).strict().superRefine((cfg, ctx) => {
+  for (const key of Object.keys(cfg.tfplan_rule_map ?? {})) {
+    if (key.startsWith("!")) {
+      ctx.addIssue({
+        code: external_exports.ZodIssueCode.custom,
+        path: ["tfplan_rule_map", key],
+        message: 'negated patterns (starting with "!") are not supported as "tfplan_rule_map" keys'
+      });
+    }
+  }
+  if (cfg.rules && Object.hasOwn(cfg.tfplan_rule_map ?? {}, "default")) {
+    ctx.addIssue({
+      code: external_exports.ZodIssueCode.custom,
+      path: ["rules"],
+      message: '"rules" and "tfplan_rule_map.default" both define the default rule set; keep only one'
+    });
+  }
+});
 function parseConfig(data) {
   const result = ConfigSchema.safeParse(data);
   if (!result.success) {
@@ -33982,6 +34011,45 @@ async function approvePullRequest(params) {
   return { approved: true, alreadyApproved: false };
 }
 
+// src/rule-map.ts
+var DEFAULT_KEY = "default";
+var TOP_LEVEL_RULES_LABEL = "rules";
+var BUILT_IN_LABEL = "built-in default";
+var BUILT_IN_DEFAULT_RULES = [{ name: "no-changes", when: { no_changes: true } }];
+var GLOB_MAGIC2 = /[*?[\]{}!()]/;
+var MINIMATCH_OPTIONS2 = { nonegate: true };
+function resolveRuleSet(name, sources) {
+  const ruleMap = sources.ruleMap ?? {};
+  if (name !== null && name !== DEFAULT_KEY) {
+    if (Object.hasOwn(ruleMap, name)) {
+      return { ruleSet: name, rules: ruleMap[name] };
+    }
+    const globKeys = Object.keys(ruleMap).filter(
+      (key) => key !== DEFAULT_KEY && GLOB_MAGIC2.test(key) && minimatch(name, key, MINIMATCH_OPTIONS2)
+    );
+    if (globKeys.length > 1) {
+      throw new Error(
+        `plan "${name}" is matched by more than one "tfplan_rule_map" pattern (${globKeys.map((k) => `"${k}"`).join(", ")}); make the patterns disjoint, or add a key matching the name exactly`
+      );
+    }
+    if (globKeys.length === 1) {
+      return { ruleSet: globKeys[0], rules: ruleMap[globKeys[0]] };
+    }
+  }
+  if (Object.hasOwn(ruleMap, DEFAULT_KEY)) {
+    return { ruleSet: DEFAULT_KEY, rules: ruleMap[DEFAULT_KEY] };
+  }
+  if (sources.rules) {
+    return { ruleSet: TOP_LEVEL_RULES_LABEL, rules: sources.rules };
+  }
+  return { ruleSet: BUILT_IN_LABEL, rules: BUILT_IN_DEFAULT_RULES };
+}
+function unusedRuleMapKeys(ruleMap, usedRuleSets) {
+  if (!ruleMap) return [];
+  const used = new Set(usedRuleSets);
+  return Object.keys(ruleMap).filter((key) => key !== DEFAULT_KEY && !used.has(key));
+}
+
 // src/summary.ts
 var MAX_LISTED_FILES = 20;
 function escapeHtml(value) {
@@ -34028,15 +34096,26 @@ async function writeSummary(input) {
       summary2.addTable([
         [
           { data: "Plan file", header: true },
+          { data: "Name", header: true },
+          { data: "Rule set", header: true },
           { data: "Result", header: true },
           { data: "Matched rule", header: true }
         ],
         ...results.map((r) => [
-          r.file,
+          escapeHtml(r.file),
+          r.name !== null ? escapeHtml(r.name) : "-",
+          escapeHtml(r.ruleSet),
           r.evaluation.matched ? "\u2705 matched" : "\u274C no match",
           r.evaluation.matchedRule ?? "-"
         ])
       ]);
+      const builtIn = results.filter((r) => r.ruleSet === BUILT_IN_LABEL);
+      if (builtIn.length > 0) {
+        summary2.addRaw(
+          `\u26A0\uFE0F ${builtIn.length} plan(s) were evaluated against the **built-in default** (\`no_changes\` only) because no rule set selected them.`,
+          true
+        );
+      }
     }
     for (const r of results) {
       if (r.evaluation.matched) continue;
@@ -34050,11 +34129,68 @@ ${reasons}
   await summary2.write();
 }
 
+// src/plan-files.ts
+var NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+function parsePlanFilesInput(input) {
+  const entries = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const raw of input.split("\n")) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const eq = line.indexOf("=");
+    if (eq === -1 || line.slice(0, eq).includes("/")) {
+      entries.push({ name: null, pattern: line });
+      continue;
+    }
+    const name = line.slice(0, eq).trim();
+    const pattern = line.slice(eq + 1).trim();
+    if (!NAME_PATTERN.test(name)) {
+      throw new Error(
+        `invalid plan name "${name}" in "plan-files": a name may contain only letters, digits, ".", "_" and "-"`
+      );
+    }
+    if (pattern === "") {
+      throw new Error(`plan name "${name}" in "plan-files" has no glob pattern after "="`);
+    }
+    if (seen.has(name)) {
+      throw new Error(`duplicate plan name "${name}" in "plan-files"`);
+    }
+    seen.add(name);
+    entries.push({ name, pattern });
+  }
+  return entries;
+}
+
 // src/main.ts
-async function resolvePlanFiles(input) {
-  const globber = await create(input, { matchDirectories: false });
-  const files = await globber.glob();
-  return Array.from(new Set(files));
+async function resolvePlanFiles(entries) {
+  const byFile = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const globber = await create(entry.pattern, { matchDirectories: false });
+    const files = Array.from(new Set(await globber.glob()));
+    if (entry.name !== null && files.length > 1) {
+      throw new Error(
+        `plan name "${entry.name}" matched ${files.length} files (${files.join(", ")}); a name must identify exactly one plan`
+      );
+    }
+    if (entry.name !== null && files.length === 0) {
+      info(`  ${entry.name}: no plan file matched ${entry.pattern} (stack not planned)`);
+    }
+    for (const file of files) {
+      const existing = byFile.get(file);
+      if (!existing) {
+        byFile.set(file, { file, name: entry.name });
+        continue;
+      }
+      if (existing.name === null) {
+        existing.name = entry.name;
+      } else if (entry.name !== null && entry.name !== existing.name) {
+        throw new Error(
+          `plan file "${file}" is bound to two names ("${existing.name}" and "${entry.name}"); a plan file must have exactly one name`
+        );
+      }
+    }
+  }
+  return Array.from(byFile.values());
 }
 function getPullNumber() {
   const raw = getInput("pull-request-number");
@@ -34116,11 +34252,12 @@ async function run() {
       );
       setOutput("approved", "false");
       setOutput("matched-rules", "{}");
+      setOutput("plan-results", "[]");
       setOutput("out-of-scope-files", JSON.stringify(pathCheck.outOfScopeFiles));
       await writeSummary({ pathCheck, results: [], approved: false });
       return;
     }
-    const planFiles = await resolvePlanFiles(planInput);
+    const planFiles = await resolvePlanFiles(parsePlanFilesInput(planInput));
     if (planFiles.length === 0 && !allowEmptyPlans) {
       throw new Error(
         `no plan files matched: ${planInput} (set "allow-empty-plans: true" if a PR in scope legitimately produces no plan, e.g. a docs-only change)`
@@ -34131,16 +34268,28 @@ async function run() {
         `no plan files matched: ${planInput} \u2014 no plan was evaluated; approving on the scope check alone. Verify that the plan job actually produced the plan JSON.`
       );
     }
-    info(`Evaluating ${planFiles.length} plan file(s) against ${config.rules.length} rule(s).`);
-    const results = planFiles.map((file) => {
+    info(`Evaluating ${planFiles.length} plan file(s).`);
+    const results = planFiles.map(({ file, name }) => {
       const content = fs5.readFileSync(file, "utf8");
       const plan = parsePlan(content);
-      const evaluation = evaluatePlan(plan, config.rules);
+      const { ruleSet, rules } = resolveRuleSet(name, {
+        ruleMap: config.tfplan_rule_map,
+        rules: config.rules
+      });
+      const evaluation = evaluatePlan(plan, rules);
       info(
-        `  ${file}: ${evaluation.matched ? `matched "${evaluation.matchedRule}"` : "no match"}`
+        `  ${file} [${name ?? "unnamed"}] against "${ruleSet}": ` + (evaluation.matched ? `matched "${evaluation.matchedRule}"` : "no match")
       );
-      return { file, evaluation };
+      return { file, name, ruleSet, evaluation };
     });
+    for (const key of unusedRuleMapKeys(
+      config.tfplan_rule_map,
+      results.map((r) => r.ruleSet)
+    )) {
+      warning(
+        `"tfplan_rule_map" key "${key}" matched no plan in this run \u2014 check the "plan-files" names if that stack was expected to be evaluated.`
+      );
+    }
     const approved = results.every((r) => r.evaluation.matched);
     const matchedRules = {};
     for (const r of results) {
@@ -34166,6 +34315,18 @@ async function run() {
     setOutput("approved", String(approved));
     setOutput("matched-rules", JSON.stringify(matchedRules));
     setOutput("out-of-scope-files", "[]");
+    setOutput(
+      "plan-results",
+      JSON.stringify(
+        results.map((r) => ({
+          file: r.file,
+          name: r.name,
+          ruleSet: r.ruleSet,
+          rule: r.evaluation.matchedRule,
+          matched: r.evaluation.matched
+        }))
+      )
+    );
     await writeSummary({ pathCheck, results, approved });
   } catch (error2) {
     setFailed(error2 instanceof Error ? error2.message : String(error2));

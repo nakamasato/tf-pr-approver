@@ -90,6 +90,61 @@ never treated as changes.
 
 At least one condition is required per rule (an empty `when` is rejected).
 
+## `tfplan_rule_map` (per-plan rules)
+
+In a monorepo, different stacks carry different risk. `rules` is one flat list
+applied to every plan, and rules are OR'd, so a permissive rule added for a
+sandbox stack also applies to production. `tfplan_rule_map` keys rule sets by
+plan name instead:
+
+```yaml
+tfplan_rule_map:
+  sandbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+  "*-prod":
+    - name: no-changes
+      when:
+        no_changes: true
+  default:
+    - name: create-only
+      when:
+        allowed_actions: [create]
+        denied_resource_types: [google_project_iam_member]
+```
+
+Names come from the `name=glob` form of the `plan-files` input:
+
+```yaml
+plan-files: |
+  sandbox=tfplans/tfplan-sandbox/tfplan.json
+  api-prod=tfplans/tfplan-api-prod/tfplan.json
+```
+
+### Resolution order
+
+For each plan, in order:
+
+1. a key matching the name **exactly**
+2. a **glob** key — exactly one must match, or the action fails
+3. `default`
+4. the top-level `rules`, if there is no `default`
+5. the **built-in default**: `no_changes` only
+
+`default` is reserved and is never matched as a glob. Steps 4 and 5 are what
+make an incomplete configuration fail closed — a plan whose name was never
+listed is judged by the strictest useful rule, not waved through.
+
+`rules` and `tfplan_rule_map.default` mean the same thing, so declaring both is
+rejected. `rules` on its own keeps working exactly as before.
+
+> **`target_paths` must exclude your workflow files when you use
+> `tfplan_rule_map`.** Plan names come from the workflow, which lives in the
+> repository, and under `pull_request` the head branch's workflow is what runs.
+> Without that exclusion a PR could rename a production artifact into a
+> permissive rule set. The scope check is what prevents this.
+
 ## Behavior
 
 - **Any changed file outside `target_paths`** → the action **skips** approval

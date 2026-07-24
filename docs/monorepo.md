@@ -41,3 +41,50 @@ so it is approved. A PR touching `docs/**` *and* `app/**` fails the scope check.
 > missing — a failed artifact upload or a typo in `plan-files` is
 > indistinguishable from a legitimate docs-only PR. The action logs a warning in
 > that case; keep the plan job's failure fatal so it cannot happen silently.
+
+## Different rules per stack
+
+Bind a name to each stack's plan and give the risky ones their own rule set. The
+plan jobs already know their artifact names, so the workflow can pass them
+through:
+
+```yaml
+- uses: nakamasato/tf-pr-approver@v1
+  with:
+    plan-files: |
+      sandbox=tfplans/${{ needs.sandbox.outputs.tfplan_artifact_name }}/tfplan.json
+      api-prod=tfplans/${{ needs.api-prod.outputs.tfplan_artifact_name }}/tfplan.json
+```
+
+Excluding the workflow files from `target_paths` is **required** when using
+`tfplan_rule_map`: plan names come from the workflow, and under `pull_request`
+the head branch's workflow is what runs, so without that exclusion a PR could
+rename a production artifact into a permissive rule set.
+
+```yaml
+# .github/tf-pr-approver.yml
+target_paths:
+  include:
+    - stacks/**
+  exclude:
+    - .github/workflows/**
+    - .github/tf-pr-approver.yml
+
+tfplan_rule_map:
+  sandbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+  default:
+    - name: no-changes
+      when:
+        no_changes: true
+```
+
+A named entry that matches no file is fine — only the stacks a PR touches
+produce an artifact. A named entry matching *several* files fails the job: a
+name has to identify one plan for the summary and `plan-results` to stay
+readable.
+
+See [configuration.md](configuration.md#tfplan_rule_map-per-plan-rules) for the
+full resolution order and the `target_paths` requirement.
