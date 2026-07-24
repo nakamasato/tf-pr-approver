@@ -107,3 +107,42 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ rules: [{ when: { no_changes: true } }] })).toThrow(/invalid config/)
   })
 })
+
+describe('parseConfig: tfplan_rule_map', () => {
+  const ruleList = [{ name: 'no-changes', when: { no_changes: true } }]
+
+  it('accepts a map keyed by plan name and by glob', () => {
+    const cfg = parseConfig({
+      tfplan_rule_map: { sandbox: ruleList, '*-prod': ruleList, default: ruleList },
+    })
+    expect(Object.keys(cfg.tfplan_rule_map ?? {})).toEqual(['sandbox', '*-prod', 'default'])
+  })
+
+  it('accepts a config with neither rules nor tfplan_rule_map', () => {
+    // Everything then evaluates against the built-in default (no_changes).
+    const cfg = parseConfig({ target_paths: { include: ['terraform/**'] } })
+    expect(cfg.rules).toBeUndefined()
+    expect(cfg.tfplan_rule_map).toBeUndefined()
+  })
+
+  it('rejects rules alongside tfplan_rule_map.default', () => {
+    expect(() => parseConfig({ rules: ruleList, tfplan_rule_map: { default: ruleList } })).toThrow(
+      /both define the default rule set/
+    )
+  })
+
+  it('accepts rules alongside a tfplan_rule_map without a default key', () => {
+    const cfg = parseConfig({ rules: ruleList, tfplan_rule_map: { sandbox: ruleList } })
+    expect(cfg.rules).toHaveLength(1)
+  })
+
+  it('rejects a key starting with "!"', () => {
+    expect(() => parseConfig({ tfplan_rule_map: { '!prod': ruleList } })).toThrow(
+      /negated patterns/
+    )
+  })
+
+  it('rejects an empty rule list under a key', () => {
+    expect(() => parseConfig({ tfplan_rule_map: { sandbox: [] } })).toThrow(/invalid config/)
+  })
+})
