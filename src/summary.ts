@@ -5,9 +5,14 @@
 import * as core from '@actions/core'
 import { PlanEvaluation } from './evaluate'
 import { PathCheckResult } from './paths'
+import { BUILT_IN_LABEL } from './rule-map'
 
 export interface PlanResult {
   file: string
+  /** null when the plan came from a bare glob rather than a `name=glob` entry. */
+  name: string | null
+  /** Which `tfplan_rule_map` bucket was applied; see `rule-map.ts`. */
+  ruleSet: string
   evaluation: PlanEvaluation
 }
 
@@ -76,23 +81,38 @@ export async function writeSummary(input: SummaryInput): Promise<void> {
       summary.addTable([
         [
           { data: 'Plan file', header: true },
+          { data: 'Name', header: true },
+          { data: 'Rule set', header: true },
           { data: 'Result', header: true },
           { data: 'Matched rule', header: true },
         ],
         ...results.map((r) => [
-          r.file,
+          escapeHtml(r.file),
+          r.name !== null ? escapeHtml(r.name) : '-',
+          escapeHtml(r.ruleSet),
           r.evaluation.matched ? '✅ matched' : '❌ no match',
-          r.evaluation.matchedRule ?? '-',
+          r.evaluation.matchedRule ? escapeHtml(r.evaluation.matchedRule) : '-',
         ]),
       ])
+
+      // Landing on the built-in default nearly always means a name was never
+      // wired up, so the plan was judged by stricter rules than intended.
+      const builtIn = results.filter((r) => r.ruleSet === BUILT_IN_LABEL)
+      if (builtIn.length > 0) {
+        summary.addRaw(
+          `⚠️ ${builtIn.length} plan(s) were evaluated against the **built-in default** ` +
+            '(`no_changes` only) because no rule set selected them.',
+          true
+        )
+      }
     }
 
     for (const r of results) {
       if (r.evaluation.matched) continue
       const reasons = r.evaluation.ruleEvaluations
-        .map((e) => `- \`${e.rule}\`: ${e.reason ?? 'n/a'}`)
+        .map((e) => `- \`${escapeHtml(e.rule)}\`: ${escapeHtml(e.reason ?? 'n/a')}`)
         .join('\n')
-      summary.addDetails(`Why "${r.file}" did not match any rule`, `\n\n${reasons}\n`)
+      summary.addDetails(`Why "${escapeHtml(r.file)}" did not match any rule`, `\n\n${reasons}\n`)
     }
   }
 

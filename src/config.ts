@@ -60,6 +60,8 @@ const TargetPathsSchema = z
     message: '"target_paths" must specify "include" and/or "exclude"',
   })
 
+const RuleListSchema = z.array(RuleSchema).nonempty()
+
 const ConfigSchema = z
   .object({
     /**
@@ -69,9 +71,44 @@ const ConfigSchema = z
      * `include`, where nothing is in scope and nothing is ever approved.
      */
     target_paths: TargetPathsSchema.optional(),
-    rules: z.array(RuleSchema).nonempty(),
+    /**
+     * Rules for plans that no `tfplan_rule_map` key selects. The same bucket as
+     * `tfplan_rule_map.default`, kept as-is for configs written before the map
+     * existed. Omitting both falls back to the built-in `no_changes` rule
+     * (see `rule-map.ts`), so an incomplete config is strict, not permissive.
+     */
+    rules: RuleListSchema.optional(),
+    /**
+     * Plan name — or a glob over plan names — to the rules that plan must
+     * satisfy. Names come from the `name=glob` form of the `plan-files` input.
+     */
+    tfplan_rule_map: z.record(z.string().min(1), RuleListSchema).optional(),
   })
   .strict()
+  .superRefine((cfg, ctx) => {
+    // Key-level checks live here rather than in the record's key schema so the
+    // behavior does not depend on how zod applies refinements to record keys.
+    for (const key of Object.keys(cfg.tfplan_rule_map ?? {})) {
+      if (key.startsWith('!')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['tfplan_rule_map', key],
+          message:
+            'negated patterns (starting with "!") are not supported as "tfplan_rule_map" keys',
+        })
+      }
+    }
+    // Two places claiming the same bucket: which one wins would be invisible in
+    // the config, so refuse rather than pick.
+    if (cfg.rules && Object.hasOwn(cfg.tfplan_rule_map ?? {}, 'default')) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rules'],
+        message:
+          '"rules" and "tfplan_rule_map.default" both define the default rule set; keep only one',
+      })
+    }
+  })
 
 export type Conditions = z.infer<typeof ConditionsSchema>
 export type Rule = z.infer<typeof RuleSchema>

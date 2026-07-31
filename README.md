@@ -75,7 +75,7 @@ config.
 | Input                 | Required | Default                         | Description                                                                                         |
 | --------------------- | -------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `github-token`        | yes      | —                               | Token with `pull-requests: write`. The default `GITHUB_TOKEN` or a GitHub App installation token — see [docs/authentication.md](docs/authentication.md). |
-| `plan-files`          | yes      | —                               | Glob pattern(s) or newline-separated paths to the plan JSON files. Every matched plan must be safe. |
+| `plan-files`          | yes      | —                               | Glob pattern(s) or newline-separated paths to the plan JSON files, optionally as `name=glob` to bind a name for `tfplan_rule_map`. Every matched plan must be safe. |
 | `config`              | no       | `.github/tf-pr-approver.yml`  | Path to the rules config.                                                                            |
 | `allow-empty-plans`   | no       | `false`                         | Treat "no plan file matched" as OK instead of failing (needed for docs-only PRs).                    |
 | `pull-request-number` | no       | (from event)                    | PR number to approve. Defaults to the PR in the event context.                                      |
@@ -86,8 +86,8 @@ config.
 | Output               | Description                                                                     |
 | -------------------- | ------------------------------------------------------------------------------- |
 | `approved`           | `"true"` if the PR was approved (or already approved), else `"false"`.          |
-| `matched-rules`      | JSON object mapping each plan file to the rule it matched (or `null`).          |
 | `out-of-scope-files` | JSON array of changed files outside `target_paths` (empty when the check passed). |
+| `plan-results`       | JSON array of per-plan results: `file`, `name` (null when unnamed), `ruleSet`, `rule` (matched rule, or null) and `matched`. |
 
 ## Configuration
 
@@ -110,6 +110,11 @@ rules:
 **Rules are OR'd** — a plan is "safe" if it matches at least one rule. Within a
 rule, **all conditions under `when` must hold** (AND).
 
+Using per-plan rule sets (`tfplan_rule_map`) **requires `target_paths`**, and that
+scope must exclude the workflow files: plan names come from the workflow on the
+head branch, so a PR could otherwise rename a plan into a more permissive rule
+set. See **[docs/monorepo.md](docs/monorepo.md)**.
+
 Full reference — pattern matching, every condition, and what the action does in
 each outcome: **[docs/configuration.md](docs/configuration.md)**.
 
@@ -120,6 +125,7 @@ each outcome: **[docs/configuration.md](docs/configuration.md)**.
 | [docs/authentication.md](docs/authentication.md) | Choosing between `GITHUB_TOKEN` and a GitHub App, and setting each one up |
 | [docs/configuration.md](docs/configuration.md) | `target_paths`, rule conditions, and the skip/approve/fail behavior |
 | [docs/monorepo.md](docs/monorepo.md) | Multiple stacks and docs-only PRs |
+| [docs/migration.md](docs/migration.md) | Upgrading notes (removed outputs, moving to `tfplan_rule_map`) |
 | [docs/development.md](docs/development.md) | Local development and the release process |
 
 ## License
