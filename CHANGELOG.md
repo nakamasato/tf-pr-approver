@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/nakamasato/tf-pr-approver/compare/v1.0.1...v2.0.0) (2026-07-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* per-plan rule sets via tfplan_rule_map ([#10](https://github.com/nakamasato/tf-pr-approver/issues/10))
+
+### Features
+
+* per-plan rule sets via tfplan_rule_map ([#10](https://github.com/nakamasato/tf-pr-approver/issues/10)) ([94547fa](https://github.com/nakamasato/tf-pr-approver/commit/94547fafc40179cdde17f4e3503343baf43b1be1))
+
 ## [1.0.1](https://github.com/nakamasato/tf-pr-approver/compare/v1.0.0...v1.0.1) (2026-07-23)
 
 
