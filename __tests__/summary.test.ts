@@ -6,8 +6,12 @@ import * as core from '@actions/core'
 import { PlanResult, writeSummary } from '../src/summary'
 
 /** A chainable stub standing in for `core.summary`. */
-function stubSummary(): { addTable: ReturnType<typeof vi.fn>; addRaw: ReturnType<typeof vi.fn> } {
-  const calls = { addTable: vi.fn(), addRaw: vi.fn() }
+function stubSummary(): {
+  addTable: ReturnType<typeof vi.fn>
+  addRaw: ReturnType<typeof vi.fn>
+  addDetails: ReturnType<typeof vi.fn>
+} {
+  const calls = { addTable: vi.fn(), addRaw: vi.fn(), addDetails: vi.fn() }
   const chain = {
     addHeading: vi.fn(() => chain),
     addRaw: vi.fn((...args: unknown[]) => {
@@ -15,7 +19,10 @@ function stubSummary(): { addTable: ReturnType<typeof vi.fn>; addRaw: ReturnType
       return chain
     }),
     addList: vi.fn(() => chain),
-    addDetails: vi.fn(() => chain),
+    addDetails: vi.fn((...args: unknown[]) => {
+      calls.addDetails(...args)
+      return chain
+    }),
     addTable: vi.fn((...args: unknown[]) => {
       calls.addTable(...args)
       return chain
@@ -77,5 +84,46 @@ describe('writeSummary', () => {
 
     const raw = calls.addRaw.mock.calls.map((c) => String(c[0])).join('\n')
     expect(raw).toContain('built-in default')
+  })
+
+  it('escapes HTML in the file name and matched rule columns', async () => {
+    // File paths come from a glob and rule names from config; render both inert
+    // so neither can inject markup into the job summary.
+    await writeSummary({
+      pathCheck: null,
+      results: [
+        result({
+          file: 'plans/<img>.json',
+          evaluation: { matched: true, matchedRule: '<b>rule</b>', ruleEvaluations: [] },
+        }),
+      ],
+      approved: true,
+    })
+
+    const [rows] = calls.addTable.mock.calls[0] as [Array<Array<unknown>>]
+    expect(rows[1][0]).toBe('plans/&lt;img&gt;.json')
+    expect(rows[1][4]).toBe('&lt;b&gt;rule&lt;/b&gt;')
+  })
+
+  it('escapes HTML in the failure details title and reasons', async () => {
+    await writeSummary({
+      pathCheck: null,
+      results: [
+        result({
+          file: 'plans/<img>.json',
+          evaluation: {
+            matched: false,
+            matchedRule: null,
+            ruleEvaluations: [{ rule: '<b>rule</b>', matched: false, reason: 'has <delete>' }],
+          },
+        }),
+      ],
+      approved: false,
+    })
+
+    const [title, body] = calls.addDetails.mock.calls[0] as [string, string]
+    expect(title).toContain('plans/&lt;img&gt;.json')
+    expect(body).toContain('&lt;b&gt;rule&lt;/b&gt;')
+    expect(body).toContain('has &lt;delete&gt;')
   })
 })

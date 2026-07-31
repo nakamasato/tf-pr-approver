@@ -34106,7 +34106,7 @@ async function writeSummary(input) {
           r.name !== null ? escapeHtml(r.name) : "-",
           escapeHtml(r.ruleSet),
           r.evaluation.matched ? "\u2705 matched" : "\u274C no match",
-          r.evaluation.matchedRule ?? "-"
+          r.evaluation.matchedRule ? escapeHtml(r.evaluation.matchedRule) : "-"
         ])
       ]);
       const builtIn = results.filter((r) => r.ruleSet === BUILT_IN_LABEL);
@@ -34119,8 +34119,8 @@ async function writeSummary(input) {
     }
     for (const r of results) {
       if (r.evaluation.matched) continue;
-      const reasons = r.evaluation.ruleEvaluations.map((e) => `- \`${e.rule}\`: ${e.reason ?? "n/a"}`).join("\n");
-      summary2.addDetails(`Why "${r.file}" did not match any rule`, `
+      const reasons = r.evaluation.ruleEvaluations.map((e) => `- \`${escapeHtml(e.rule)}\`: ${escapeHtml(e.reason ?? "n/a")}`).join("\n");
+      summary2.addDetails(`Why "${escapeHtml(r.file)}" did not match any rule`, `
 
 ${reasons}
 `);
@@ -34222,6 +34222,11 @@ async function run() {
         '"allow-empty-plans: true" requires "target_paths" in the config: without a scope check, a PR that produces no plan would be approved unconditionally'
       );
     }
+    if (config.tfplan_rule_map && Object.keys(config.tfplan_rule_map).length > 0 && !config.target_paths) {
+      throw new Error(
+        '"tfplan_rule_map" requires "target_paths" in the config: plan names come from the workflow on the head branch, so the scope gate must exclude the workflow files to stop a PR from renaming a plan into a more permissive rule set'
+      );
+    }
     const octokit = getOctokit(token);
     const { owner, repo } = context2.repo;
     const pullNumber = getPullNumber();
@@ -34269,6 +34274,13 @@ async function run() {
       );
     }
     info(`Evaluating ${planFiles.length} plan file(s).`);
+    for (const { name } of planFiles) {
+      if (name === DEFAULT_KEY) {
+        warning(
+          `plan name "${DEFAULT_KEY}" is reserved: it is treated as the fallback bucket, not as an exact "tfplan_rule_map" key. Rename it if you meant to give it its own rule set.`
+        );
+      }
+    }
     const results = planFiles.map(({ file, name }) => {
       const content = fs5.readFileSync(file, "utf8");
       const plan = parsePlan(content);

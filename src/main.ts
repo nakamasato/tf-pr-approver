@@ -29,7 +29,7 @@ import { evaluatePlan } from './evaluate'
 import { approvePullRequest } from './approve'
 import { PlanResult, writeSummary } from './summary'
 import { parsePlanFilesInput, PlanFileEntry } from './plan-files'
-import { resolveRuleSet, unusedRuleMapKeys } from './rule-map'
+import { DEFAULT_KEY, resolveRuleSet, unusedRuleMapKeys } from './rule-map'
 
 interface ResolvedPlanFile {
   file: string
@@ -121,6 +121,23 @@ export async function run(): Promise<void> {
       )
     }
 
+    // `tfplan_rule_map` selects rules by plan name, and plan names come from the
+    // head branch's workflow under `pull_request`. Without a scope gate, a PR
+    // could rename a production artifact into a permissive bucket. Require
+    // `target_paths` so the workflow files can be kept out of scope. An empty
+    // map selects nothing, so it does not trigger this — only a real one does.
+    if (
+      config.tfplan_rule_map &&
+      Object.keys(config.tfplan_rule_map).length > 0 &&
+      !config.target_paths
+    ) {
+      throw new Error(
+        '"tfplan_rule_map" requires "target_paths" in the config: plan names come from the ' +
+          'workflow on the head branch, so the scope gate must exclude the workflow files to ' +
+          'stop a PR from renaming a plan into a more permissive rule set'
+      )
+    }
+
     const octokit = github.getOctokit(token)
     const { owner, repo } = github.context.repo
     const pullNumber = getPullNumber()
@@ -187,6 +204,18 @@ export async function run(): Promise<void> {
       )
     }
     core.info(`Evaluating ${planFiles.length} plan file(s).`)
+
+    // A plan literally named "default" lands in the fallback bucket, not in a
+    // key of its own: `resolveRuleSet` reserves that name. Warn so the mismatch
+    // between intent and effect is visible rather than silent.
+    for (const { name } of planFiles) {
+      if (name === DEFAULT_KEY) {
+        core.warning(
+          `plan name "${DEFAULT_KEY}" is reserved: it is treated as the fallback bucket, not as ` +
+            'an exact "tfplan_rule_map" key. Rename it if you meant to give it its own rule set.'
+        )
+      }
+    }
 
     const results: PlanResult[] = planFiles.map(({ file, name }) => {
       const content = fs.readFileSync(file, 'utf8')

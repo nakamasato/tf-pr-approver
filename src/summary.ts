@@ -91,7 +91,7 @@ export async function writeSummary(input: SummaryInput): Promise<void> {
           r.name !== null ? escapeHtml(r.name) : '-',
           escapeHtml(r.ruleSet),
           r.evaluation.matched ? '✅ matched' : '❌ no match',
-          r.evaluation.matchedRule ?? '-',
+          r.evaluation.matchedRule ? escapeHtml(r.evaluation.matchedRule) : '-',
         ]),
       ])
 
@@ -110,9 +110,9 @@ export async function writeSummary(input: SummaryInput): Promise<void> {
     for (const r of results) {
       if (r.evaluation.matched) continue
       const reasons = r.evaluation.ruleEvaluations
-        .map((e) => `- \`${e.rule}\`: ${e.reason ?? 'n/a'}`)
+        .map((e) => `- \`${escapeHtml(e.rule)}\`: ${escapeHtml(e.reason ?? 'n/a')}`)
         .join('\n')
-      summary.addDetails(`Why "${r.file}" did not match any rule`, `\n\n${reasons}\n`)
+      summary.addDetails(`Why "${escapeHtml(r.file)}" did not match any rule`, `\n\n${reasons}\n`)
     }
   }
 

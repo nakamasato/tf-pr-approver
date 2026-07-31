@@ -439,4 +439,56 @@ tfplan_rule_map:
 
     expect(outputs()['plan-results']).toBe('[]')
   })
+
+  it('fails when tfplan_rule_map is configured without target_paths', async () => {
+    // Plan names come from the head branch's workflow; without a scope gate a
+    // PR could rename a production artifact into a permissive bucket.
+    writeConfig(`
+tfplan_rule_map:
+  sandbox:
+    - name: anything
+      when:
+        allowed_actions: [create, update, delete]
+`)
+    inputs['plan-files'] = 'sandbox=plans/sandbox.json'
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('"tfplan_rule_map" requires "target_paths"')
+    )
+    expect(approvePullRequest).not.toHaveBeenCalled()
+  })
+
+  it('does not require target_paths for an empty tfplan_rule_map', async () => {
+    // An empty map selects nothing, so it carries none of the risk the guard
+    // exists to catch — it must not force `target_paths`.
+    writeConfig(
+      'tfplan_rule_map: {}\nrules:\n  - name: no changes\n    when:\n      no_changes: true\n'
+    )
+    planFiles = [path.join(FIXTURES, 'no-changes.json')]
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+  })
+
+  it('warns when a plan is named "default", the reserved fallback bucket', async () => {
+    writeConfig(`
+target_paths:
+  include:
+    - terraform/**
+tfplan_rule_map:
+  default:
+    - name: no-changes
+      when:
+        no_changes: true
+`)
+    inputs['plan-files'] = namePlan('default', 'no-changes.json')
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('"default" is reserved'))
+  })
 })

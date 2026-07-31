@@ -111,6 +111,11 @@ rules:
 **Rules are OR'd** — a plan is "safe" if it matches at least one rule. Within a
 rule, **all conditions under `when` must hold** (AND).
 
+Using per-plan rule sets (`tfplan_rule_map`) **requires `target_paths`**, and that
+scope must exclude the workflow files: plan names come from the workflow on the
+head branch, so a PR could otherwise rename a plan into a more permissive rule
+set. See **[docs/monorepo.md](docs/monorepo.md)**.
+
 Full reference — pattern matching, every condition, and what the action does in
 each outcome: **[docs/configuration.md](docs/configuration.md)**.
 
