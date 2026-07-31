@@ -134,7 +134,6 @@ describe('run: scope gate', () => {
     expect(approvePullRequest).not.toHaveBeenCalled()
     expect(outputs()).toEqual({
       approved: 'false',
-      'matched-rules': '{}',
       'plan-results': '[]',
       'out-of-scope-files': JSON.stringify(['app/main.go']),
     })
@@ -150,7 +149,6 @@ describe('run: scope gate', () => {
     )
     expect(outputs()).toEqual({
       approved: 'true',
-      'matched-rules': JSON.stringify({ [planFiles[0]]: 'no changes' }),
       'out-of-scope-files': '[]',
       'plan-results': JSON.stringify([
         { file: planFiles[0], name: null, ruleSet: 'rules', rule: 'no changes', matched: true },

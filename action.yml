@@ -50,8 +50,6 @@ inputs:
 outputs:
   approved:
     description: '"true" if the PR was approved (or already approved), "false" otherwise.'
-  matched-rules:
-    description: 'JSON object mapping each evaluated plan file to the rule name it matched (or null).'
   out-of-scope-files:
     description: 'JSON array of changed files outside `target_paths` (empty when the scope check passed).'
   plan-results:

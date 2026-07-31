@@ -179,7 +179,6 @@ export async function run(): Promise<void> {
         'PR changes files outside "target_paths"; skipping approval (human review required).'
       )
       core.setOutput('approved', 'false')
-      core.setOutput('matched-rules', '{}')
       core.setOutput('plan-results', '[]')
       core.setOutput('out-of-scope-files', JSON.stringify(pathCheck.outOfScopeFiles))
       await writeSummary({ pathCheck, results: [], approved: false })
@@ -244,11 +243,6 @@ export async function run(): Promise<void> {
 
     const approved = results.every((r) => r.evaluation.matched)
 
-    const matchedRules: Record<string, string | null> = {}
-    for (const r of results) {
-      matchedRules[r.file] = r.evaluation.matchedRule
-    }
-
     // --- 3. approval -------------------------------------------------------
     if (approved) {
       const { data: pr } = await octokit.rest.pulls.get({
@@ -269,7 +263,6 @@ export async function run(): Promise<void> {
     }
 
     core.setOutput('approved', String(approved))
-    core.setOutput('matched-rules', JSON.stringify(matchedRules))
     core.setOutput('out-of-scope-files', '[]')
     core.setOutput(
       'plan-results',

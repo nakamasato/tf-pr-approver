@@ -34256,7 +34256,6 @@ async function run() {
         'PR changes files outside "target_paths"; skipping approval (human review required).'
       );
       setOutput("approved", "false");
-      setOutput("matched-rules", "{}");
       setOutput("plan-results", "[]");
       setOutput("out-of-scope-files", JSON.stringify(pathCheck.outOfScopeFiles));
       await writeSummary({ pathCheck, results: [], approved: false });
@@ -34303,10 +34302,6 @@ async function run() {
       );
     }
     const approved = results.every((r) => r.evaluation.matched);
-    const matchedRules = {};
-    for (const r of results) {
-      matchedRules[r.file] = r.evaluation.matchedRule;
-    }
     if (approved) {
       const { data: pr } = await octokit.rest.pulls.get({
         owner,
@@ -34325,7 +34320,6 @@ async function run() {
       info("Not all plans matched a rule; skipping approval (human review required).");
     }
     setOutput("approved", String(approved));
-    setOutput("matched-rules", JSON.stringify(matchedRules));
     setOutput("out-of-scope-files", "[]");
     setOutput(
       "plan-results",
