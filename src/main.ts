@@ -28,7 +28,7 @@ import { parsePlan } from './plan'
 import { evaluatePlan } from './evaluate'
 import { approvePullRequest } from './approve'
 import { PlanResult, writeSummary } from './summary'
-import { parsePlanFilesInput, PlanFileEntry } from './plan-files'
+import { hasEmptyPathSegment, parsePlanFilesInput, PlanFileEntry } from './plan-files'
 import { DEFAULT_KEY, resolveRuleSet, unusedRuleMapKeys } from './rule-map'
 
 interface ResolvedPlanFile {
@@ -41,6 +41,18 @@ async function resolvePlanFiles(entries: PlanFileEntry[]): Promise<ResolvedPlanF
   const byFile = new Map<string, ResolvedPlanFile>()
 
   for (const entry of entries) {
+    // Never hand an empty path segment to the globber: it would normalize the
+    // segment away and widen the pattern onto an unrelated plan file. The
+    // expression that produced it expanded to nothing, which means "this stack
+    // was not planned" — the same outcome as a glob that matches nothing.
+    if (hasEmptyPathSegment(entry.pattern)) {
+      core.info(
+        `  ${entry.name ?? 'unnamed'}: ignoring "${entry.pattern}" — it has an empty path ` +
+          'segment, so the workflow expression that builds it expanded to nothing (stack not planned)'
+      )
+      continue
+    }
+
     const globber = await glob.create(entry.pattern, { matchDirectories: false })
     const files = Array.from(new Set(await globber.glob()))
 
