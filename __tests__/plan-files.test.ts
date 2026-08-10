@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePlanFilesInput } from '../src/plan-files'
+import { hasEmptyPathSegment, parsePlanFilesInput } from '../src/plan-files'
 
 describe('parsePlanFilesInput', () => {
   it('treats a plain line as an unnamed glob', () => {
@@ -48,5 +48,36 @@ describe('parsePlanFilesInput', () => {
 
   it('rejects a duplicate name', () => {
     expect(() => parsePlanFilesInput('a=x.json\na=y.json')).toThrow(/duplicate plan name "a"/)
+  })
+})
+
+describe('hasEmptyPathSegment', () => {
+  it('flags a pattern whose middle segment is empty', () => {
+    // `tfplans/${{ needs.x.outputs.tfplan_artifact_name }}/tfplan.json` with a
+    // skipped plan job. @actions/glob collapses the "//", so the pattern would
+    // silently resolve to a different, unrelated plan file.
+    expect(hasEmptyPathSegment('tfplans//tfplan.json')).toBe(true)
+  })
+
+  it('flags a pattern ending in a separator', () => {
+    // Same cause, expression at the end: `tfplans/${{ ... }}` becomes `tfplans/`.
+    // A plan file is a file, so a trailing separator can never be intentional.
+    expect(hasEmptyPathSegment('tfplans/')).toBe(true)
+  })
+
+  it('flags several consecutive separators', () => {
+    expect(hasEmptyPathSegment('tfplans///tfplan.json')).toBe(true)
+  })
+
+  it('accepts an ordinary relative glob', () => {
+    expect(hasEmptyPathSegment('tfplans/**/tfplan.json')).toBe(false)
+  })
+
+  it('accepts an absolute path', () => {
+    expect(hasEmptyPathSegment('/home/runner/work/tfplans/tfplan.json')).toBe(false)
+  })
+
+  it('accepts a leading "//" so a Windows UNC root still works', () => {
+    expect(hasEmptyPathSegment('//host/share/tfplan.json')).toBe(false)
   })
 })

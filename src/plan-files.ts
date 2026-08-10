@@ -22,6 +22,26 @@ export interface PlanFileEntry {
  */
 const NAME_PATTERN = /^[A-Za-z0-9._-]+$/
 
+/**
+ * An empty path segment — `tfplans//tfplan.json` or a trailing `tfplans/`.
+ *
+ * A workflow builds plan patterns by interpolation
+ * (`tfplans/${{ needs.x.outputs.tfplan_artifact_name }}/tfplan.json`), and a
+ * skipped plan job makes that expression expand to nothing. `@actions/glob`
+ * normalizes the resulting empty segment away, so the pattern silently widens
+ * to `tfplans/tfplan.json` — a *different* stack's plan. The name would then be
+ * bound to a plan it has nothing to do with, and the rule set selected by that
+ * name would judge it. Treat such a pattern as matching nothing instead.
+ *
+ * A leading `//` is left alone: that is a Windows UNC root, not an empty
+ * segment. A trailing separator counts, because a plan file is a file.
+ */
+const EMPTY_PATH_SEGMENT = /[^/]\/\/|\/$/
+
+export function hasEmptyPathSegment(pattern: string): boolean {
+  return EMPTY_PATH_SEGMENT.test(pattern)
+}
+
 export function parsePlanFilesInput(input: string): PlanFileEntry[] {
   const entries: PlanFileEntry[] = []
   const seen = new Set<string>()

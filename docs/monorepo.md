@@ -56,6 +56,12 @@ through:
       api-prod=tfplans/${{ needs.api-prod.outputs.tfplan_artifact_name }}/tfplan.json
 ```
 
+A plan job that was skipped produces no output, so its line arrives as
+`tfplans//tfplan.json`. The action treats a glob with an **empty path segment**
+as matching nothing — the stack simply was not planned. It deliberately does not
+let the empty segment collapse to `tfplans/tfplan.json`, which would bind the
+name to some other stack's plan and judge it by this stack's rule set.
+
 Excluding the workflow files from `target_paths` is **required** when using
 `tfplan_rule_map`: plan names come from the workflow, and under `pull_request`
 the head branch's workflow is what runs, so without that exclusion a PR could

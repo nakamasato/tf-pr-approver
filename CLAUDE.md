@@ -70,6 +70,9 @@ Do not "fix" the following.
 - Throw when the changed-file count reaches GitHub's 3000-file limit (a truncated list
   makes the scope check untrustworthy)
 - Renames put both the old and the new path in scope
+- A `plan-files` glob with an empty path segment (`tfplans//tfplan.json`, from a
+  skipped job's `${{ }}` expanding to nothing) matches **nothing**. `@actions/glob`
+  would otherwise collapse it and bind the name to another stack's plan
 
 ## Error policy
 

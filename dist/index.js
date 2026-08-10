@@ -34131,6 +34131,10 @@ ${reasons}
 
 // src/plan-files.ts
 var NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+var EMPTY_PATH_SEGMENT = /[^/]\/\/|\/$/;
+function hasEmptyPathSegment(pattern) {
+  return EMPTY_PATH_SEGMENT.test(pattern);
+}
 function parsePlanFilesInput(input) {
   const entries = [];
   const seen = /* @__PURE__ */ new Set();
@@ -34165,6 +34169,12 @@ function parsePlanFilesInput(input) {
 async function resolvePlanFiles(entries) {
   const byFile = /* @__PURE__ */ new Map();
   for (const entry of entries) {
+    if (hasEmptyPathSegment(entry.pattern)) {
+      info(
+        `  ${entry.name ?? "unnamed"}: ignoring "${entry.pattern}" \u2014 it has an empty path segment, so the workflow expression that builds it expanded to nothing (stack not planned)`
+      );
+      continue;
+    }
     const globber = await create(entry.pattern, { matchDirectories: false });
     const files = Array.from(new Set(await globber.glob()));
     if (entry.name !== null && files.length > 1) {

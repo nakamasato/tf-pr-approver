@@ -394,6 +394,58 @@ tfplan_rule_map:
     expect(approvePullRequest).not.toHaveBeenCalled()
   })
 
+  it('ignores a named entry whose glob has an empty path segment', async () => {
+    // A workflow writes `name=tfplans/${{ needs.x.outputs.artifact }}/tfplan.json`.
+    // A skipped plan job leaves that expression empty, so the action receives
+    // `tfplans//tfplan.json` — and @actions/glob normalizes it to
+    // `tfplans/tfplan.json`, an unrelated stack's plan. Binding the name to it
+    // would judge that plan by this name's (possibly permissive) rule set.
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    const other = path.join(tmpDir, 'other.json')
+    fs.copyFileSync(path.join(FIXTURES, 'with-delete.json'), other)
+    // The mock stands in for the normalization: the collapsed pattern finds a file.
+    planFilesByPattern['tfplans//tfplan.json'] = [other]
+    inputs['plan-files'] = 'sandbox=tfplans//tfplan.json'
+    inputs['allow-empty-plans'] = 'true'
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(JSON.parse(outputs()['plan-results'])).toEqual([])
+  })
+
+  it('does not report two skipped stacks as one plan file bound to two names', async () => {
+    // Two skipped plan jobs collapse to the same pattern, so both names used to
+    // land on the same file and fail the run outright.
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    const other = path.join(tmpDir, 'other.json')
+    fs.copyFileSync(path.join(FIXTURES, 'no-changes.json'), other)
+    planFilesByPattern['tfplans//tfplan.json'] = [other]
+    inputs['plan-files'] = ['sandbox=tfplans//tfplan.json', 'prod=tfplans//tfplan.json'].join('\n')
+    inputs['allow-empty-plans'] = 'true'
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(JSON.parse(outputs()['plan-results'])).toEqual([])
+  })
+
+  it('still evaluates the plans of stacks that did run alongside skipped ones', async () => {
+    // The real single-artifact case: only `prod` planned, and the collapsed
+    // pattern of the skipped stack reaches that same plan file.
+    writeConfig('target_paths:\n  include:\n    - terraform/**\n')
+    const prod = namePlan('prod', 'no-changes.json')
+    planFilesByPattern['tfplans//tfplan.json'] = planFilesByPattern['plans/prod.json']
+    inputs['plan-files'] = ['skipped=tfplans//tfplan.json', prod].join('\n')
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(outputs().approved).toBe('true')
+    const results = JSON.parse(outputs()['plan-results']) as Array<Record<string, unknown>>
+    expect(results.map((r) => r.name)).toEqual(['prod'])
+  })
+
   it('treats a named entry matching no file as a stack that was not planned', async () => {
     // The normal monorepo case: only the stacks a PR touches produce artifacts.
     writeConfig('target_paths:\n  include:\n    - terraform/**\n')
