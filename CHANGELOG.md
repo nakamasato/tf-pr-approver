@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/nakamasato/tf-pr-approver/compare/v2.0.0...v2.0.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* treat a plan-files glob with an empty path segment as no match ([#12](https://github.com/nakamasato/tf-pr-approver/issues/12)) ([6bc3bd6](https://github.com/nakamasato/tf-pr-approver/commit/6bc3bd608dac9859e4bb0100049e8c14394de00b))
+
 ## [2.0.0](https://github.com/nakamasato/tf-pr-approver/compare/v1.0.1...v2.0.0) (2026-07-31)
 
 
