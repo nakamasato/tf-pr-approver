@@ -92,5 +92,54 @@ produce an artifact. A named entry matching *several* files fails the job: a
 name has to identify one plan for the summary and `plan-results` to stay
 readable.
 
+### Keep the download layout stable
+
+`actions/download-artifact` extracts a **single** artifact directly into `path`
+and only nests each artifact under its own name once two or more match. A
+workflow whose names expect `tfplans/<artifact-name>/tfplan.json` therefore gets
+that layout only while several stacks planned; with exactly one, the file lands
+at `tfplans/tfplan.json` and no named entry matches it. Either pin the download
+path, or carry the stack directory inside the artifact.
+
+**Download each artifact into its own directory.**
+
+```yaml
+- if: needs.sandbox.outputs.tfplan_artifact_name != ''
+  uses: actions/download-artifact@v4
+  with:
+    name: ${{ needs.sandbox.outputs.tfplan_artifact_name }}
+    path: tfplans/${{ needs.sandbox.outputs.tfplan_artifact_name }}
+```
+
+Naming `path` yourself removes the artifact-count branch entirely. The `if:`
+guard is not optional: a skipped plan job leaves the name empty, and an empty
+`name` makes `download-artifact` fetch **every** artifact in the run, which puts
+the branch right back.
+
+**Or upload the plan as `<stack>/tfplan.json`** and keep one download step for
+everything. The stack directory then travels inside the artifact, so it survives
+whichever way the artifact is extracted, and a `**` glob matches both layouts:
+
+```yaml
+plan-files: |
+  sandbox=tfplans/**/sandbox/tfplan.json
+  api-prod=tfplans/**/api-prod/tfplan.json
+```
+
+`**` matches zero directories as well as many, so this reaches
+`tfplans/sandbox/tfplan.json` when the artifact was flattened and
+`tfplans/<artifact-name>/sandbox/tfplan.json` when it was not. Brace expansion
+(`tfplans/{,*/}sandbox/tfplan.json`) does **not** work — `@actions/glob` does not
+expand braces. This scales better than one download step per stack once there
+are many of them.
+
+Getting this right matters most when a bare catch-all glob sits alongside the
+named entries. A diverging layout then makes the catch-all pick the plans up
+**unnamed**, and they are evaluated under `default` rather than their own rule
+set — with nothing in the log to distinguish that from stacks that were never
+planned, because both produce the same "no plan file matched" line. The action
+cannot recover the name: a plan file carries no record of which stack it came
+from, which is why `plan-files` has to state the binding.
+
 See [configuration.md](configuration.md#tfplan_rule_map-per-plan-rules) for the
 full resolution order and the `target_paths` requirement.
