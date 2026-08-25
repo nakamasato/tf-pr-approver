@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/nakamasato/tf-pr-approver/compare/v2.0.1...v2.1.0) (2026-08-25)
+
+
+### Features
+
+* list the matched rule per plan in the approval review body ([#16](https://github.com/nakamasato/tf-pr-approver/issues/16)) ([f74567e](https://github.com/nakamasato/tf-pr-approver/commit/f74567ec2ea7e763eb9b782bdad821fc1c7291e2))
+
 ## [2.0.1](https://github.com/nakamasato/tf-pr-approver/compare/v2.0.0...v2.0.1) (2026-08-10)
 
 
