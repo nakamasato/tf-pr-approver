@@ -147,6 +147,9 @@ describe('run: scope gate', () => {
     expect(approvePullRequest).toHaveBeenCalledWith(
       expect.objectContaining({ owner: 'o', repo: 'r', pullNumber: 7, headSha: 'deadbeef' })
     )
+    const { body } = vi.mocked(approvePullRequest).mock.calls[0][0]
+    expect(body.startsWith('approved\n\n| Plan | Rule set | Matched rule |')).toBe(true)
+    expect(body).toContain('| `no changes` |')
     expect(outputs()).toEqual({
       approved: 'true',
       'out-of-scope-files': '[]',
