@@ -79,7 +79,7 @@ config.
 | `config`              | no       | `.github/tf-pr-approver.yml`  | Path to the rules config.                                                                            |
 | `allow-empty-plans`   | no       | `false`                         | Treat "no plan file matched" as OK instead of failing (needed for docs-only PRs).                    |
 | `pull-request-number` | no       | (from event)                    | PR number to approve. Defaults to the PR in the event context.                                      |
-| `approve-message`     | no       | (a default message)             | Body text for the approval review.                                                                  |
+| `approve-message`     | no       | (a default message)             | Opening text of the approval review; a table of the matched rule per plan is appended.                                                               |
 
 ## Outputs
 

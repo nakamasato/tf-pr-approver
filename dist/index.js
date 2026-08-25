@@ -19995,11 +19995,11 @@ var Summary = class {
    */
   addTable(rows) {
     const tableBody = rows.map((row) => {
-      const cells = row.map((cell) => {
-        if (typeof cell === "string") {
-          return this.wrap("td", cell);
+      const cells = row.map((cell2) => {
+        if (typeof cell2 === "string") {
+          return this.wrap("td", cell2);
         }
-        const { header, data, colspan, rowspan } = cell;
+        const { header, data, colspan, rowspan } = cell2;
         const tag = header ? "th" : "td";
         const attrs = Object.assign(Object.assign({}, colspan && { colspan }), rowspan && { rowspan });
         return this.wrap(tag, data, attrs);
@@ -34011,6 +34011,25 @@ async function approvePullRequest(params) {
   return { approved: true, alreadyApproved: false };
 }
 
+// src/approve-body.ts
+function cell(value) {
+  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+function buildApproveBody(message, results) {
+  if (results.length === 0) {
+    return `${message}
+
+_No plan was evaluated; approved on the scope check alone._`;
+  }
+  const rows = results.map((r) => {
+    const plan = r.name !== null ? `\`${cell(r.file)}\` (${cell(r.name)})` : `\`${cell(r.file)}\``;
+    return `| ${plan} | \`${cell(r.ruleSet)}\` | \`${cell(r.evaluation.matchedRule ?? "-")}\` |`;
+  });
+  return [message, "", "| Plan | Rule set | Matched rule |", "| --- | --- | --- |", ...rows].join(
+    "\n"
+  );
+}
+
 // src/rule-map.ts
 var DEFAULT_KEY = "default";
 var TOP_LEVEL_RULES_LABEL = "rules";
@@ -34324,7 +34343,7 @@ async function run() {
         repo,
         pullNumber,
         headSha: pr.head.sha,
-        body: approveMessage
+        body: buildApproveBody(approveMessage, results)
       });
     } else {
       info("Not all plans matched a rule; skipping approval (human review required).");

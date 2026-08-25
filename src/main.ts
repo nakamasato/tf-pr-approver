@@ -27,6 +27,7 @@ import { checkChangedFiles, PathCheckResult } from './paths'
 import { parsePlan } from './plan'
 import { evaluatePlan } from './evaluate'
 import { approvePullRequest } from './approve'
+import { buildApproveBody } from './approve-body'
 import { PlanResult, writeSummary } from './summary'
 import { hasEmptyPathSegment, parsePlanFilesInput, PlanFileEntry } from './plan-files'
 import { DEFAULT_KEY, resolveRuleSet, unusedRuleMapKeys } from './rule-map'
@@ -268,7 +269,7 @@ export async function run(): Promise<void> {
         repo,
         pullNumber,
         headSha: pr.head.sha,
-        body: approveMessage,
+        body: buildApproveBody(approveMessage, results),
       })
     } else {
       core.info('Not all plans matched a rule; skipping approval (human review required).')
